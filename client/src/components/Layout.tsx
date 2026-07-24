@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   SidebarProvider,
   Sidebar,
@@ -17,7 +17,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { useAppInfo } from '@lark-apaas/client-toolkit/hooks/useAppInfo';
 import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
 
 import {
@@ -35,6 +34,10 @@ import {
   BreadcrumbList,
 } from '@/components/ui/breadcrumb';
 import { SettingsButton } from '@/components/business-ui/settings-button';
+import {
+  SheetWorkspace,
+  type SheetItem,
+} from '@/components/business-ui/sheet-workspace';
 import { usePreferences } from '@/components/theme-provider';
 
 const NAV_ITEMS = [
@@ -65,14 +68,39 @@ const FOOTER_NAV_ITEMS = [
 
 const LayoutContent = () => {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
-  const { appLogo } = useAppInfo();
   const { toggleSidebar } = useSidebar();
   const userInfo = useCurrentUserProfile();
   const { avatar } = usePreferences();
   const [loggingOut, setLoggingOut] = useState(false);
   const [dashboardExpanded, setDashboardExpanded] = useState(() => pathname.startsWith('/dashboard'));
   const [expenseExpanded, setExpenseExpanded] = useState(() => pathname.startsWith('/expense'));
+  const [sheets, setSheets] = useState<SheetItem[]>([]);
+  const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
+
+  const openSheet = useCallback((path: string, label: string, icon?: string) => {
+    const id = `${path}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const newSheet: SheetItem = { id, path, label, icon };
+    setSheets((prev) => [...prev, newSheet]);
+    setActiveSheetId(id);
+  }, []);
+
+  const closeSheet = useCallback((id: string) => {
+    setSheets((prev) => {
+      const index = prev.findIndex((sheet) => sheet.id === id);
+      const next = prev.filter((sheet) => sheet.id !== id);
+      if (activeSheetId === id && next.length > 0) {
+        const fallback = prev[index - 1] ?? prev[index + 1] ?? next[0];
+        setActiveSheetId(fallback?.id ?? null);
+      } else if (next.length === 0) {
+        setActiveSheetId(null);
+      }
+      return next;
+    });
+  }, [activeSheetId]);
+
+  const activateSheet = useCallback((id: string) => {
+    setActiveSheetId(id);
+  }, []);
 
   // Auto-expand when navigating to a dashboard sub-route
   useEffect(() => {
@@ -81,12 +109,43 @@ const LayoutContent = () => {
     }
   }, [pathname]);
 
-  // Auto-expand when navigating to an expense sub-route
+  // Auto-expand when navigating to a expense sub-route
   useEffect(() => {
     if (pathname.startsWith('/expense')) {
       setExpenseExpanded(true);
     }
   }, [pathname]);
+
+  // Open an initial sheet for the current route on first load
+  useEffect(() => {
+    const allSheetPaths = [
+      ...NAV_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
+      ...DASHBOARD_SUB_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
+      ...EXPENSE_SUB_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
+    ];
+    const matched = allSheetPaths.find((item) =>
+      item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)
+    );
+    if (matched && sheets.length === 0) {
+      openSheet(matched.path, matched.label, matched.icon);
+    }
+  }, []);
+
+  // Clear sheets when navigating to a route that is not part of the sheet system
+  useEffect(() => {
+    const sheetPaths = [
+      ...NAV_ITEMS.map((item) => item.path),
+      ...DASHBOARD_SUB_ITEMS.map((item) => item.path),
+      ...EXPENSE_SUB_ITEMS.map((item) => item.path),
+    ];
+    const isSheetPath = sheetPaths.some((path) =>
+      path === '/' ? pathname === '/' : pathname.startsWith(path)
+    );
+    if (!isSheetPath && sheets.length > 0) {
+      setSheets([]);
+      setActiveSheetId(null);
+    }
+  }, [pathname, sheets.length]);
 
   const isLoggedIn = !!userInfo?.user_id;
   const displayName = (typeof userInfo?.name === 'string' ? userInfo.name : '') || '游客';
@@ -100,9 +159,14 @@ const LayoutContent = () => {
 
   const activeSubItem = DASHBOARD_SUB_ITEMS.find((item) => pathname.startsWith(item.path));
   const activeExpenseSubItem = EXPENSE_SUB_ITEMS.find((item) => pathname.startsWith(item.path));
-  const activeTitle = activeSubItem?.label || activeExpenseSubItem?.label || [...NAV_ITEMS, ...FOOTER_NAV_ITEMS].find((item) =>
-    item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)
-  )?.label || (pathname.startsWith('/dashboard') ? '成交分析' : '生产力数据多维分析');
+  const activeSheet = sheets.find((sheet) => sheet.id === activeSheetId);
+  const activeTitle = activeSheet?.label
+    || activeSubItem?.label
+    || activeExpenseSubItem?.label
+    || [...NAV_ITEMS, ...FOOTER_NAV_ITEMS].find((item) =>
+      item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)
+    )?.label
+    || (pathname.startsWith('/dashboard') ? '成交分析' : '生产力数据多维分析');
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -135,13 +199,6 @@ const LayoutContent = () => {
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild tooltip="重点数据分析">
                 <Link to="/">
-                  <div className="flex aspect-square size-8 items-center justify-center rounded-sm bg-primary text-primary-foreground">
-                    {appLogo ? (
-                      <img src={appLogo} alt="" className="size-5 object-contain bg-[#ffffff] rounded border-[#ffffff] h-[30px] w-[40px]" />
-                    ) : (
-                      <img src="/logo.jpg" alt="" className="size-5 object-contain" />
-                    )}
-                  </div>
                   <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                     <span className="truncate font-extrabold text-xl group-data-[collapsible=icon]:hidden">重点数据分析</span>
                   </div>
@@ -158,28 +215,22 @@ const LayoutContent = () => {
                 {NAV_ITEMS.slice(0, 2).map((item) => (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
-                      asChild
-                      isActive={
-                        item.path === '/'
-                          ? pathname === '/'
-                          : pathname.startsWith(item.path)
-                      }
+                      isActive={sheets.some((sheet) => sheet.path === item.path && sheet.id === activeSheetId)}
+                      onClick={() => openSheet(item.path, item.label, item.icon)}
                       tooltip={item.label}
                     >
-                      <Link to={item.path}>
-                        <span className="flex size-4 items-center justify-center text-base leading-none">{item.icon}</span>
-                        <span className="font-extrabold group-data-[collapsible=icon]:hidden">{item.label}</span>
-                      </Link>
+                      <span className="flex size-4 items-center justify-center text-base leading-none">{item.icon}</span>
+                      <span className="font-extrabold group-data-[collapsible=icon]:hidden">{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
                 {/* 成交分析 — 可折叠二级目录 */}
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={pathname === '/dashboard' || pathname === '/dashboard/overview'}
+                    isActive={sheets.some((sheet) => sheet.path.startsWith('/dashboard') && sheet.id === activeSheetId)}
                     onClick={() => {
                       setDashboardExpanded((prev) => !prev);
-                      navigate('/dashboard/overview');
+                      openSheet('/dashboard/overview', '成交分析', '📊');
                     }}
                     tooltip="成交分析"
                   >
@@ -192,13 +243,11 @@ const LayoutContent = () => {
                       {DASHBOARD_SUB_ITEMS.map((sub) => (
                         <SidebarMenuSubItem key={sub.path}>
                           <SidebarMenuSubButton
-                            asChild
-                            isActive={pathname.startsWith(sub.path)}
+                            isActive={sheets.some((sheet) => sheet.path === sub.path && sheet.id === activeSheetId)}
+                            onClick={() => openSheet(sub.path, sub.label, sub.icon)}
                           >
-                            <Link to={sub.path}>
-                              <span className="flex size-4 items-center justify-center text-base leading-none">{sub.icon}</span>
-                              <span>{sub.label}</span>
-                            </Link>
+                            <span className="flex size-4 items-center justify-center text-base leading-none">{sub.icon}</span>
+                            <span>{sub.label}</span>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       ))}
@@ -208,10 +257,10 @@ const LayoutContent = () => {
                 {/* 费用总览 — 可折叠二级目录 */}
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={pathname === '/expense' || pathname.startsWith('/expense/')}
+                    isActive={sheets.some((sheet) => sheet.path.startsWith('/expense') && sheet.id === activeSheetId)}
                     onClick={() => {
                       setExpenseExpanded((prev) => !prev);
-                      navigate('/expense');
+                      openSheet('/expense', '费用总览', '💰');
                     }}
                     tooltip="费用总览"
                   >
@@ -224,13 +273,11 @@ const LayoutContent = () => {
                       {EXPENSE_SUB_ITEMS.map((sub) => (
                         <SidebarMenuSubItem key={sub.path}>
                           <SidebarMenuSubButton
-                            asChild
-                            isActive={pathname.startsWith(sub.path)}
+                            isActive={sheets.some((sheet) => sheet.path === sub.path && sheet.id === activeSheetId)}
+                            onClick={() => openSheet(sub.path, sub.label, sub.icon)}
                           >
-                            <Link to={sub.path}>
-                              <span className="flex size-4 items-center justify-center text-base leading-none">{sub.icon}</span>
-                              <span>{sub.label}</span>
-                            </Link>
+                            <span className="flex size-4 items-center justify-center text-base leading-none">{sub.icon}</span>
+                            <span>{sub.label}</span>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       ))}
@@ -240,18 +287,12 @@ const LayoutContent = () => {
                 {NAV_ITEMS.slice(2).filter((item) => item.path !== '/expense').map((item) => (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
-                      asChild
-                      isActive={
-                        item.path === '/'
-                          ? pathname === '/'
-                          : pathname.startsWith(item.path)
-                      }
+                      isActive={sheets.some((sheet) => sheet.path === item.path && sheet.id === activeSheetId)}
+                      onClick={() => openSheet(item.path, item.label, item.icon)}
                       tooltip={item.label}
                     >
-                      <Link to={item.path}>
-                        <span className="flex size-4 items-center justify-center text-base leading-none">{item.icon}</span>
-                        <span className="font-extrabold group-data-[collapsible=icon]:hidden">{item.label}</span>
-                      </Link>
+                      <span className="flex size-4 items-center justify-center text-base leading-none">{item.icon}</span>
+                      <span className="font-extrabold group-data-[collapsible=icon]:hidden">{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -332,9 +373,18 @@ const LayoutContent = () => {
             <SettingsButton />
           </div>
         </header>
-        <div className="flex-1 overflow-auto bg-background p-4">
-          <Outlet />
-        </div>
+        {sheets.length > 0 ? (
+          <SheetWorkspace
+            sheets={sheets}
+            activeSheetId={activeSheetId}
+            onActivateSheet={activateSheet}
+            onCloseSheet={closeSheet}
+          />
+        ) : (
+          <div className="flex-1 overflow-auto bg-background p-4">
+            <Outlet />
+          </div>
+        )}
       </main>
     </>
   );
