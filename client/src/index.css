@@ -1,0 +1,77 @@
+@import '@lark-apaas/client-toolkit/lib/index.css';
+@import "tw-animate-css";
+@import "./tailwind-theme.css";
+@import "./themes/theme-overrides.css";
+@import "./typography.css";
+
+/* Dynamic font token: PreferencesProvider updates --font-sans at runtime */
+html body {
+  font-family: var(--font-sans) !important;
+}
+
+@source "../../node_modules/streamdown/dist/*.js";
+@config "../../tailwind.config.ts";
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes heatmap-header-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-2px) rotate(-1deg); }
+  40% { transform: translateX(2px) rotate(1deg); }
+  60% { transform: translateX(-2px) rotate(-1deg); }
+  80% { transform: translateX(2px) rotate(1deg); }
+}
+
+/* Faint 1px grid overlay for desktop main content area */
+.bg-grid-pattern {
+  background-image:
+    linear-gradient(to right, hsl(220, 15%, 92%) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(220, 15%, 92%) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Numeric cell utility: right-aligned tabular monospace for data tables */
+.numeric-cell {
+  text-align: right;
+  font-family: "Roboto Mono", "SF Mono", Consolas, monospace !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Total / summary row utility */
+.table-total-row {
+  font-weight: 600;
+  background-color: hsl(220, 18%, 94%);
+}
+
+/* Accessible focus rings for interactive elements without visible focus styles */
+button:not([class*="focus-visible"]):focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(220, 18%, 97%), 0 0 0 4px hsl(217, 85%, 60%);
+  border-radius: 2px;
+}
+
+/* Reduced motion: disable non-essential transitions and animations */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .bg-grid-pattern {
+    background-image: none;
+  }
+}
