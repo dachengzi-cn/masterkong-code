@@ -7,6 +7,12 @@ export interface ChatCompletionsResult {
   statusCode: number;
 }
 
+export interface ChatCompletionsUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
 @Injectable()
 export class AiService {
   async chatCompletions(dto: ChatCompletionsProxyDto): Promise<ChatCompletionsResult> {

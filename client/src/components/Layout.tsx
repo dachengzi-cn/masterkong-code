@@ -102,6 +102,10 @@ const LayoutContent = () => {
     setActiveSheetId(id);
   }, []);
 
+  const handleReorderSheets = useCallback((newSheets: SheetItem[]) => {
+    setSheets(newSheets);
+  }, []);
+
   // Auto-expand when navigating to a dashboard sub-route
   useEffect(() => {
     if (pathname.startsWith('/dashboard')) {
@@ -122,6 +126,7 @@ const LayoutContent = () => {
       ...NAV_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
       ...DASHBOARD_SUB_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
       ...EXPENSE_SUB_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
+      ...FOOTER_NAV_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
     ];
     const matched = allSheetPaths.find((item) =>
       item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)
@@ -137,6 +142,7 @@ const LayoutContent = () => {
       ...NAV_ITEMS.map((item) => item.path),
       ...DASHBOARD_SUB_ITEMS.map((item) => item.path),
       ...EXPENSE_SUB_ITEMS.map((item) => item.path),
+      ...FOOTER_NAV_ITEMS.map((item) => item.path),
     ];
     const isSheetPath = sheetPaths.some((path) =>
       path === '/' ? pathname === '/' : pathname.startsWith(path)
@@ -306,14 +312,12 @@ const LayoutContent = () => {
             {FOOTER_NAV_ITEMS.map((item) => (
               <SidebarMenuItem key={item.path}>
                 <SidebarMenuButton
-                  asChild
-                  isActive={item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)}
+                  isActive={sheets.some((sheet) => sheet.path === item.path && sheet.id === activeSheetId)}
+                  onClick={() => openSheet(item.path, item.label, item.icon)}
                   tooltip={item.label}
                 >
-                  <Link to={item.path}>
-                    <span className="flex size-4 items-center justify-center text-base leading-none">{item.icon}</span>
-                    <span className={`${item.labelClass} group-data-[collapsible=icon]:hidden`}>{item.label}</span>
-                  </Link>
+                  <span className="flex size-4 items-center justify-center text-base leading-none">{item.icon}</span>
+                  <span className={`${item.labelClass} group-data-[collapsible=icon]:hidden`}>{item.label}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
@@ -379,6 +383,7 @@ const LayoutContent = () => {
             activeSheetId={activeSheetId}
             onActivateSheet={activateSheet}
             onCloseSheet={closeSheet}
+            onReorderSheets={handleReorderSheets}
           />
         ) : (
           <div className="flex-1 overflow-auto bg-background p-4">

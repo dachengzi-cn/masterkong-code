@@ -4,6 +4,7 @@ import * as React from "react"
 
 import { usePreferences } from "@/components/theme-provider"
 import { AiConfigSection } from "@/components/business-ui/ai-config-section"
+import { BuiltinAiConfigSection } from "@/components/business-ui/builtin-ai-config-section"
 import { AvatarEditor } from "@/components/business-ui/avatar-editor"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -195,10 +196,20 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
 
             <Separator />
 
-            {/* AI 模型接入与测试 */}
+            {/* AI 模型接入 */}
             <section className="space-y-3">
               <Label className="text-xs text-muted-foreground">
-                AI 模型接入与测试
+                AI 模型接入
+              </Label>
+              <BuiltinAiConfigSection />
+            </section>
+
+            <Separator />
+
+            {/* 自定义模型 */}
+            <section className="space-y-3">
+              <Label className="text-xs text-muted-foreground">
+                自定义模型
               </Label>
               <AiConfigSection />
             </section>

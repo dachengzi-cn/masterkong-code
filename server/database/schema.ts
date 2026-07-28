@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 import { sql } from 'drizzle-orm';
-import { foreignKey, index, integer, jsonb, pgTable, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
+import { boolean, foreignKey, index, integer, jsonb, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -265,6 +265,34 @@ export const expenseProfile = pgTable("expense_profile", {
   index("idx_expense_profile_sheet_type").on(table.sheetType),
 ]);
 
+export const aiModelConfig = pgTable("ai_model_config", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	configKey: varchar("config_key", { length: 255 }).notNull().unique(),
+	name: varchar("name", { length: 255 }).notNull(),
+	providerId: varchar("provider_id", { length: 255 }).notNull(),
+	apiKeyEncrypted: text("api_key_encrypted").notNull(),
+	baseUrl: varchar("base_url", { length: 512 }).notNull(),
+	model: varchar("model", { length: 255 }).notNull(),
+	isBuiltin: boolean("is_builtin").notNull().default(false),
+	isActive: boolean("is_active").notNull().default(false),
+	isEnabled: boolean("is_enabled").notNull().default(true),
+	// System field: Creation time (auto-filled, do not modify)
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	// System field: Creator (auto-filled, do not modify)
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+	// System field: Update time (auto-filled, do not modify)
+	updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	// System field: Updater (auto-filled, do not modify)
+	updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+	uniqueIndex("ai_model_config_config_key_key").on(table.configKey),
+	index("idx_ai_model_config_active").on(table.isActive),
+	index("idx_ai_model_config_builtin").on(table.isBuiltin),
+]);
+
 // table aliases
 export const expenseProfileTable = expenseProfile;
 export const routeProfileTable = routeProfile;
+export const aiModelConfigTable = aiModelConfig;

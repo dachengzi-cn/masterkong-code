@@ -353,9 +353,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
       <FilterBarContainer>
         <div className="flex items-center gap-2 mb-3">
           {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={handleClearAll} className="ml-auto h-6 px-2 text-xs text-muted-foreground">
+            <Button variant="ghost" size="sm" onClick={handleClearAll} className="ml-auto h-6 px-2 text-xs">
               <span className="inline-flex items-center justify-center text-base leading-none mr-1" >❌</span>
-              清除筛选
+              重置
             </Button>
           )}
         </div>

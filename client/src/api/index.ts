@@ -6,3 +6,4 @@ export * as customerApi from './customer';
 export * as routeMappingApi from './route-mapping';
 export * as routeApi from './route';
 export * as expenseApi from './expense';
+export * as aiConfigApi from './ai-config';

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useCallback, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -11,6 +11,8 @@ const DashboardPage = lazy(() => import('@/pages/DashboardPage/DashboardPage'));
 const DashboardOverviewPage = lazy(() => import('@/pages/DashboardPage/DashboardOverviewPage'));
 const DashboardBrandSpecPage = lazy(() => import('@/pages/DashboardPage/DashboardBrandSpecPage'));
 const CustomerPage = lazy(() => import('@/pages/CustomerPage/CustomerPage'));
+const CustomerListPage = lazy(() => import('@/pages/CustomerListPage/CustomerListPage'));
+const DataManagePage = lazy(() => import('@/pages/DataManagePage/DataManagePage'));
 const ExpensePage = lazy(() => import('@/pages/ExpensePage/ExpensePage'));
 const ExpiryExpensePage = lazy(() => import('@/pages/ExpiryExpensePage/ExpiryExpensePage'));
 const AtpExpensePage = lazy(() => import('@/pages/AtpExpensePage/AtpExpensePage'));
@@ -29,6 +31,7 @@ interface SheetWorkspaceProps {
   activeSheetId: string | null;
   onActivateSheet: (id: string) => void;
   onCloseSheet: (id: string) => void;
+  onReorderSheets?: (newSheets: SheetItem[]) => void;
 }
 
 const PageLoader = () => (
@@ -46,6 +49,10 @@ function SheetContent({ path }: { path: string }) {
         return wrap(<HomePage />);
       case '/customers':
         return wrap(<CustomerPage />);
+      case '/customer-list':
+        return wrap(<CustomerListPage />);
+      case '/data':
+        return wrap(<DataManagePage />);
       case '/dashboard/overview':
       case '/dashboard':
         return wrap(<DashboardOverviewPage />);
@@ -82,7 +89,73 @@ export function SheetWorkspace({
   activeSheetId,
   onActivateSheet,
   onCloseSheet,
+  onReorderSheets,
 }: SheetWorkspaceProps) {
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragItemRef = useRef<HTMLButtonElement | null>(null);
+
+  const pathCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    sheets.forEach((sheet) => {
+      counts[sheet.path] = (counts[sheet.path] || 0) + 1;
+    });
+    return counts;
+  }, [sheets]);
+
+  const handleDragStart = useCallback((
+    event: React.DragEvent<HTMLButtonElement>,
+    id: string,
+    index: number,
+  ) => {
+    setDraggingId(id);
+    dragItemRef.current = event.currentTarget;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', index.toString());
+
+    window.requestAnimationFrame(() => {
+      if (dragItemRef.current) {
+        dragItemRef.current.classList.add('opacity-50', 'scale-105');
+      }
+    });
+  }, []);
+
+  const handleDragOver = useCallback((
+    event: React.DragEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    event.preventDefault();
+    if (draggingId === null) return;
+    setDragOverIndex(index);
+  }, [draggingId]);
+
+  const handleDrop = useCallback((
+    event: React.DragEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    event.preventDefault();
+    if (draggingId === null) return;
+
+    const originalIndex = parseInt(event.dataTransfer.getData('text/plain'), 10);
+    if (!Number.isNaN(originalIndex) && originalIndex !== index && onReorderSheets) {
+      const newSheets = [...sheets];
+      const [moved] = newSheets.splice(originalIndex, 1);
+      newSheets.splice(index, 0, moved);
+      onReorderSheets(newSheets);
+    }
+
+    setDragOverIndex(null);
+  }, [draggingId, onReorderSheets, sheets]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingId(null);
+    setDragOverIndex(null);
+    if (dragItemRef.current) {
+      dragItemRef.current.classList.remove('opacity-50', 'scale-105');
+      dragItemRef.current = null;
+    }
+  }, []);
+
   if (sheets.length === 0) {
     return null;
   }
@@ -93,18 +166,32 @@ export function SheetWorkspace({
       <div className="flex items-center gap-1 border-b border-border bg-card px-2 py-1.5">
         <ScrollArea className="w-full whitespace-nowrap">
           <div className="flex items-center gap-1">
-            {sheets.map((sheet) => {
+            {sheets.map((sheet, index) => {
               const isActive = sheet.id === activeSheetId;
+              const isDuplicate = pathCounts[sheet.path] > 1;
+
               return (
                 <button
                   key={sheet.id}
                   type="button"
+                  draggable
                   onClick={() => onActivateSheet(sheet.id)}
+                  onDragStart={(event) => handleDragStart(event, sheet.id, index)}
+                  onDragOver={(event) => handleDragOver(event, index)}
+                  onDrop={(event) => handleDrop(event, index)}
+                  onDragEnd={handleDragEnd}
                   className={cn(
-                    'group relative flex h-7 max-w-[160px] shrink-0 items-center gap-1.5 rounded-sm border px-2 text-xs transition-colors',
+                    'group relative flex h-7 max-w-[160px] shrink-0 cursor-pointer items-center gap-1.5 rounded-sm border px-2 text-xs transition-all duration-150 ease-out',
                     isActive
                       ? 'border-primary bg-accent text-accent-foreground'
                       : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                    isDuplicate && !isActive
+                      ? 'bg-[hsl(142,70%,95%)] text-[hsl(152,60%,25%)] hover:bg-[hsl(142,70%,92%)]'
+                      : '',
+                    draggingId === sheet.id ? 'opacity-50 scale-105' : '',
+                    dragOverIndex === index && draggingId !== sheet.id
+                      ? 'ring-2 ring-primary ring-offset-1'
+                      : '',
                   )}
                 >
                   {sheet.icon && (

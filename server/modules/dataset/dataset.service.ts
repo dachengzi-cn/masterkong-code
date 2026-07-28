@@ -1731,7 +1731,7 @@ export class DatasetService implements OnModuleInit {
         for (let pi = 0; pi < periods.length; pi++) {
           const period = periods[pi];
           const colLabel = columns[pi].label;
-          if (pi > lastTransPeriodIdx) {
+          if (pi > lastTransPeriodIdx && !isDailyMode) {
             dailyData.push({ day: period, label: colLabel, rate: null, stores: null });
             continue;
           }
@@ -2163,7 +2163,7 @@ export class DatasetService implements OnModuleInit {
         for (let pi = 0; pi < periods.length; pi++) {
           const period = periods[pi];
           const colLabel = columns[pi].label;
-          if (pi > lastTransPeriodIdx) {
+          if (pi > lastTransPeriodIdx && !isDailyMode) {
             dailyData.push({ day: period, label: colLabel, rate: null, stores: null });
             continue;
           }

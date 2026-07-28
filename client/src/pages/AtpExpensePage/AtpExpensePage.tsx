@@ -2,13 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import MultiSelect from '@/components/ui/multi-select';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   Dialog,
   DialogContent,
@@ -242,10 +236,10 @@ const AtpExpensePage: React.FC = () => {
               variant="ghost"
               size="sm"
               onClick={handleClearAll}
-              className="ml-auto h-6 px-2 text-xs text-muted-foreground"
+              className="ml-auto h-6 px-2 text-xs"
             >
               <span className="inline-flex items-center justify-center text-base leading-none mr-1" >❌</span>
-              清除筛选
+              重置
             </Button>
           )}
         </div>
@@ -253,37 +247,25 @@ const AtpExpensePage: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground shrink-0">年月区间</span>
-            <Select value={startMonth} onValueChange={(v: string) => {
-              setStartMonth(v);
-              if (v > endMonth) setEndMonth(v);
-            }}>
-              <SelectTrigger className="h-8 w-[120px] px-2 text-xs rounded-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="max-h-[180px]">
-                {monthOptions.map((m) => (
-                  <SelectItem key={m} value={m} className="text-xs">
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={startMonth}
+              onValueChange={(v: string) => {
+                setStartMonth(v);
+                if (v > endMonth) setEndMonth(v);
+              }}
+              options={monthOptions}
+              triggerClassName="h-8 w-[120px]"
+            />
             <span className="text-xs text-muted-foreground">~</span>
-            <Select value={endMonth} onValueChange={(v: string) => {
-              setEndMonth(v);
-              if (v < startMonth) setStartMonth(v);
-            }}>
-              <SelectTrigger className="h-8 w-[120px] px-2 text-xs rounded-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="max-h-[180px]">
-                {monthOptions.map((m) => (
-                  <SelectItem key={m} value={m} className="text-xs">
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={endMonth}
+              onValueChange={(v: string) => {
+                setEndMonth(v);
+                if (v < startMonth) setStartMonth(v);
+              }}
+              options={monthOptions}
+              triggerClassName="h-8 w-[120px]"
+            />
           </div>
 
           <div className="w-px h-5 bg-border mx-1" />

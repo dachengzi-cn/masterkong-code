@@ -17,23 +17,19 @@ interface ChangelogEntry {
   items: Array<ChangelogItem | string>;
 }
 
-const APP_VERSION = 'v1.8.0';
+const APP_VERSION = 'v1.8.1';
 
 const CHANGELOG: ChangelogEntry[] = [
   {
-    version: 'v1.8.0',
+    version: 'v1.8.1',
     date: '2026-07-06',
     items: [
-      { type: 'added', text: '费用资料管理模块（expense-profile），支持费用数据上传、覆盖与清空' },
-      { type: 'added', text: '临期费用分析看板，含 KPI、趋势图、排名、预警、钻取面板' },
-      { type: 'added', text: 'ATP 费用分析页面，支持按月筛选与绩效查看' },
-      { type: 'added', text: '规格选项查询接口，支持按品牌和表单类型筛选' },
-      { type: 'added', text: '未成交门店查询接口，支持多维度筛选分析' },
-      { type: 'added', text: '业代钻取分析接口，支持按业代查看详细数据' },
       { type: 'optimized', text: '主页上传时间实时同步（上传后/切回页面/30秒轮询）' },
       { type: 'optimized', text: 'UI 设计 token 统一，KPI 卡片、筛选栏、表格、侧边栏视觉一致' },
+      { type: 'optimized', text: '系统更新日志 redesign，支持变更类型标签与版本折叠展示' },
       { type: 'fixed', text: '6月1日 数据因时区偏移被过滤的问题' },
       { type: 'fixed', text: 'getAppPublished 控制台 JSON 解析错误' },
+      { type: 'fixed', text: '清理系统更新日志中 v1.8.0 与 v1.7.0/v1.6.0 的重复条目' },
     ],
   },
   {

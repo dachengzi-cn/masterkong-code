@@ -2,13 +2,7 @@ import React from 'react';
 
 import { Button } from '@/components/ui/button';
 import MultiSelect from '@/components/ui/multi-select';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import type {
   ExpenseOverviewFilters,
   CombinedFilterOptions,
@@ -63,44 +57,26 @@ const ExpenseFilterBar: React.FC<ExpenseFilterBarProps> = ({
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground shrink-0">月份起</span>
-          <Select
+          <SearchableSelect
             value={filters.monthFrom ?? ''}
             onValueChange={(v) =>
               onChange({ ...filters, monthFrom: v || undefined })
             }
-          >
-            <SelectTrigger className="h-8 w-[120px] px-2 text-xs rounded-full">
-              <SelectValue placeholder="选择月份" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[210px] overflow-y-auto">
-              {options.months.map((m) => (
-                <SelectItem key={m} value={m} className="text-xs">
-                  {m}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            options={options.months}
+            triggerClassName="h-8 w-[120px]"
+          />
         </div>
 
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground shrink-0">月份止</span>
-          <Select
+          <SearchableSelect
             value={filters.monthTo ?? ''}
             onValueChange={(v) =>
               onChange({ ...filters, monthTo: v || undefined })
             }
-          >
-            <SelectTrigger className="h-8 w-[120px] px-2 text-xs rounded-full">
-              <SelectValue placeholder="选择月份" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[210px] overflow-y-auto">
-              {options.months.map((m) => (
-                <SelectItem key={m} value={m} className="text-xs">
-                  {m}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            options={options.months}
+            triggerClassName="h-8 w-[120px]"
+          />
         </div>
 
         <div className="w-px h-5 bg-border mx-1" />

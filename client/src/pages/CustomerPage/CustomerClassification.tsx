@@ -11,13 +11,7 @@ import type {
   FormatDrilldownResponse,
 } from '@shared/api.interface';
 import FormatDrilldownPanel from './FormatDrilldownPanel';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty';
 import { KpiCard } from '@/components/business-ui/kpi-card';
@@ -529,28 +523,20 @@ const CustomerClassification: React.FC = () => {
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-medium text-foreground">人员点数概况</h3>
           <div className="flex items-center gap-2">
-            <Select value={regionFilter} onValueChange={setRegionFilter}>
-              <SelectTrigger className="h-8 w-[120px] rounded-full text-xs">
-                <SelectValue placeholder="全部所别" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部所别</SelectItem>
-                {regions.map((r: string) => (
-                  <SelectItem key={r} value={r}>{r}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={tierFilter} onValueChange={setTierFilter}>
-              <SelectTrigger className="h-8 w-[120px] rounded-full text-xs">
-                <SelectValue placeholder="全部层级" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部层级</SelectItem>
-                {tiers.map((t: string) => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={regionFilter}
+              onValueChange={setRegionFilter}
+              options={['all', ...regions]}
+              optionLabels={{ all: '全部所别' }}
+              triggerClassName="h-8 w-[120px]"
+            />
+            <SearchableSelect
+              value={tierFilter}
+              onValueChange={setTierFilter}
+              options={['all', ...tiers]}
+              optionLabels={{ all: '全部层级' }}
+              triggerClassName="h-8 w-[120px]"
+            />
             <Button
               variant="outline"
               size="sm"

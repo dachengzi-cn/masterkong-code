@@ -806,4 +806,71 @@ export interface AtpAvailableMonthsResponse {
   months: string[];
 }
 
+// AI 模型配置相关类型
+export interface AiModelConfigItem {
+  id: string;
+  configKey: string;
+  name: string;
+  providerId: string;
+  baseUrl: string;
+  model: string;
+  isBuiltin: boolean;
+  isActive: boolean;
+  isEnabled: boolean;
+  /** 返回给前端的 API Key 为脱敏后的占位值 */
+  apiKeyMasked: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GetAiModelConfigsResponse {
+  items: AiModelConfigItem[];
+  activeConfigKey: string | null;
+}
+
+export interface SetActiveAiModelConfigRequest {
+  configKey: string;
+}
+
+export interface SetActiveAiModelConfigResponse {
+  success: boolean;
+  activeConfigKey: string | null;
+}
+
+export interface UpdateAiModelConfigRequest {
+  name?: string;
+  providerId?: string;
+  baseUrl?: string;
+  model?: string;
+  apiKey?: string;
+  isEnabled?: boolean;
+}
+
+export interface UpdateAiModelConfigResponse {
+  item: AiModelConfigItem;
+}
+
+export interface TestAiModelConfigRequest {
+  configKey: string;
+  messages?: Array<{ role: string; content: string }>;
+  maxTokens?: number;
+}
+
+export interface TestAiModelConfigMetrics {
+  latencyMs: number;
+  statusCode: number;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  };
+}
+
+export interface TestAiModelConfigResponse {
+  ok: boolean;
+  content?: string;
+  error?: string;
+  metrics?: TestAiModelConfigMetrics;
+}
+
 

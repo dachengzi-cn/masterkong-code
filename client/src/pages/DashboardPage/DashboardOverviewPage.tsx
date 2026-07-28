@@ -55,8 +55,9 @@ function aggregateRows(
       }
       return { day: col.index, label: col.label, rate: stores / routeStores, stores: stores > 0 ? stores : null, routeStores, orders };
     }
-    const rate = servicePoints > 0 ? stores / servicePoints : null;
-    return { day: col.index, label: col.label, rate, stores: stores > 0 ? stores : null };
+    const hasAnyData = rows.some((r) => r.dailyData?.[ci]?.stores !== null);
+    const rate = hasAnyData && servicePoints > 0 ? stores / servicePoints : null;
+    return { day: col.index, label: col.label, rate, stores: hasAnyData && stores > 0 ? stores : null };
   });
   return { salesRep, region, tier, servicePoints, totalOrders, dailyData, rowType };
 }
@@ -180,7 +181,7 @@ const TrendChart: React.FC<TrendChartProps> = ({ title, data, color, loading }) 
               contentStyle={{ fontSize: 11, borderRadius: 2, border: '1px solid hsl(220, 15%, 88%)' }}
               formatter={(v: number | null) => [v == null ? '-' : `${v}%`, '成交率']}
             />
-            <Line type="monotone" dataKey="rate" stroke={color} strokeWidth={2} dot={false} connectNulls />
+            <Line type="monotone" dataKey="rate" stroke={color} strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       )}
@@ -197,15 +198,19 @@ interface RegionCompareTableProps {
 }
 
 const RegionCompareTable: React.FC<RegionCompareTableProps> = ({ cumulativeRegions, dailyRegions, loading }) => {
-  // 取整体累计成交率（所有日期 stores 之和 / servicePoints）
+  // 累计成交率取区间内最后一天有效 rate；当日成交率跨日累加
   const getOverallRate = (row: HeatmapRow, isDaily: boolean): number | null => {
     if (isDaily) {
       const totalStores = row.dailyData?.reduce((s, d) => s + (d.stores ?? 0), 0) ?? 0;
       const totalRoute = row.dailyData?.reduce((s, d) => s + (d.routeStores ?? 0), 0) ?? 0;
       return totalRoute > 0 ? totalStores / totalRoute : null;
     }
-    const totalStores = row.dailyData?.reduce((s, d) => s + (d.stores ?? 0), 0) ?? 0;
-    return row.servicePoints > 0 ? totalStores / row.servicePoints : null;
+    if (!row.dailyData?.length) return null;
+    for (let i = row.dailyData.length - 1; i >= 0; i--) {
+      const rate = row.dailyData[i].rate;
+      if (rate != null) return rate;
+    }
+    return null;
   };
 
   const dailyMap = useMemo(() => {
@@ -288,8 +293,12 @@ const TierCompareChart: React.FC<TierCompareChartProps> = ({ cumulativeTiers, da
       const tr = row.dailyData?.reduce((s, d) => s + (d.routeStores ?? 0), 0) ?? 0;
       return tr > 0 ? ts / tr : null;
     }
-    const ts = row.dailyData?.reduce((s, d) => s + (d.stores ?? 0), 0) ?? 0;
-    return row.servicePoints > 0 ? ts / row.servicePoints : null;
+    if (!row.dailyData?.length) return null;
+    for (let i = row.dailyData.length - 1; i >= 0; i--) {
+      const rate = row.dailyData[i].rate;
+      if (rate != null) return rate;
+    }
+    return null;
   };
 
   const dailyMap = useMemo(() => {
@@ -386,9 +395,16 @@ const DashboardOverviewPage: React.FC = () => {
     if (!data) return { cumRate: null, dailyRate: null, servicePoints: null, orders: null };
     const cumTotal = data.cumulative.total;
     const dailyTotal = data.daily.total;
-    const cumStores = cumTotal?.dailyData?.reduce((s, d) => s + (d.stores ?? 0), 0) ?? 0;
+    // 累计成交率 = 区间内最后一天有效累计成交率（避免跨日累加导致超过 100%）
+    const cumRate = (() => {
+      if (!cumTotal?.dailyData?.length) return null;
+      for (let i = cumTotal.dailyData.length - 1; i >= 0; i--) {
+        const rate = cumTotal.dailyData[i].rate;
+        if (rate != null) return rate;
+      }
+      return null;
+    })();
     const servicePoints = cumTotal?.servicePoints ?? 0;
-    const cumRate = servicePoints > 0 ? cumStores / servicePoints : null;
     const dailyStores = dailyTotal?.dailyData?.reduce((s, d) => s + (d.stores ?? 0), 0) ?? 0;
     const dailyRoute = dailyTotal?.dailyData?.reduce((s, d) => s + (d.routeStores ?? 0), 0) ?? 0;
     const dailyRate = dailyRoute > 0 ? dailyStores / dailyRoute : null;

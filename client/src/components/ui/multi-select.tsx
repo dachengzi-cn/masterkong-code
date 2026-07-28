@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { ChevronDown, X, Plus } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -41,7 +41,14 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
   onCreateOption,
 }) => {
   const [open, setOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
   const [createInput, setCreateInput] = useState('');
+
+  const normalizedSearch = searchInput.trim().toLowerCase();
+  const filteredOptions = useMemo(() => {
+    if (!normalizedSearch) return options;
+    return options.filter((option) => option.toLowerCase().includes(normalizedSearch));
+  }, [options, normalizedSearch]);
 
   const handleToggle = useCallback((option: string) => {
     if (value.includes(option)) {
@@ -88,7 +95,15 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
       : `${value.length}项`;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) {
+          setSearchInput('');
+        }
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -125,7 +140,16 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
         align="start"
         className={cn('w-[200px] rounded-lg p-0', className)}
       >
-        <div className="max-h-[280px] overflow-y-auto py-1">
+        <div className="border-b border-border p-2">
+          <Input
+            value={searchInput}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchInput(e.target.value)}
+            placeholder={`搜索${label}`}
+            className="h-7 text-xs px-2 py-1 rounded-sm"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          />
+        </div>
+        <div className="max-h-[240px] overflow-y-auto py-1">
           {combos && combos.length > 0 && (
             <div className="pb-1 mb-1 border-b border-border">
               {combos.map((combo) => (
@@ -159,10 +183,10 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
               ))}
             </div>
           )}
-          {options.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-muted-foreground">暂无选项</div>
+          {filteredOptions.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">暂无匹配选项</div>
           ) : (
-            options.map((option: string) => {
+            filteredOptions.map((option: string) => {
               const checked = value.includes(option);
               return (
                 <div
