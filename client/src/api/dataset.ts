@@ -18,6 +18,7 @@ import type {
   TimeGranularity,
   GetUnconvertedStoresResponse,
   BrandSpecStatsResponse,
+  BrandSpecMonthlyStatsResponse,
   SalesRepDrilldownResponse,
   SystemStatusResponse,
   CheckDuplicatesRequest,
@@ -210,6 +211,33 @@ export async function getBrandSpecStats(
     params,
   });
   return res.data as BrandSpecStatsResponse;
+}
+
+export async function getBrandSpecMonthlyStats(
+  id: string,
+  salesRep: string,
+  region: string,
+  tier: string,
+  filters?: HeatmapFilterParams,
+) {
+  const safeId = String(id);
+  const params: Record<string, string> = { salesRep, region, tier };
+  if (filters) {
+    for (const [key, val] of Object.entries(filters)) {
+      if (key === 'mode') continue;
+      if (Array.isArray(val) && val.length > 0) {
+        params[key] = val.join(',');
+      } else if (typeof val === 'string' && val) {
+        params[key] = val;
+      }
+    }
+  }
+  const res = await axiosForBackend({
+    url: `/api/datasets/${safeId}/brand-spec-monthly`,
+    method: 'GET',
+    params,
+  });
+  return res.data as BrandSpecMonthlyStatsResponse;
 }
 
 export async function getSalesRepDrilldown(

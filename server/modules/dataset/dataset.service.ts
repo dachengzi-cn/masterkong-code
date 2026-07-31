@@ -30,6 +30,9 @@ import type {
   GetUnconvertedStoresResponse,
   BrandSpecStatsResponse,
   BrandSpecStatsRow,
+  BrandSpecMonthlyStatsResponse,
+  BrandSpecMonthlyStat,
+  BrandSpecDimensionMonthlyStat,
   SalesRepDrilldownResponse,
   SystemStatusResponse,
   CheckDuplicatesResponse,
@@ -2228,8 +2231,7 @@ export class DatasetService implements OnModuleInit {
     filters?: HeatmapFilterParams,
   ): Promise<BrandSpecStatsResponse> {
     if (this.useMemoryStorage) {
-      this.logger.warn('[Memory] getBrandSpecStats 暂不支持内存模式');
-      return { rows: [] };
+      return this.getBrandSpecStatsMemory(datasetId, dateFrom, dateTo, filters);
     }
     try {
       const profileWhere = this.buildProfileWhereClause(filters);
@@ -2343,7 +2345,458 @@ export class DatasetService implements OnModuleInit {
       }
       return { rows };
     } catch (err) {
-      this.logger.warn('getBrandSpecStats 失败: ' + (err as Error).message);
+      this.logger.error('getBrandSpecStats 失败: ' + (err as Error).message, (err as Error).stack);
+      return { rows: [] };
+    }
+  }
+
+  /** 内存存储模式下的品牌规格统计 */
+  private async getBrandSpecStatsMemory(
+    datasetId: string,
+    dateFrom: string,
+    dateTo: string,
+    filters?: HeatmapFilterParams,
+  ): Promise<BrandSpecStatsResponse> {
+    try {
+      // 1) 从内存客户资料构建业代分组
+      const allProfiles = this.customerProfileService.getAllProfiles();
+
+      // 根据 sheetType 推断 tier
+      let inferredTier: string | undefined;
+      if (!filters?.tier || filters.tier.length === 0) {
+        const sheetTypes = filters?.sheetType ?? [];
+        const hasFirst = sheetTypes.some((s) => s.includes('一阶'));
+        const hasSecond = sheetTypes.some((s) => s.includes('二阶'));
+        if (hasFirst && !hasSecond) inferredTier = '一阶';
+        else if (hasSecond && !hasFirst) inferredTier = '二阶';
+      }
+
+      const filteredProfiles = allProfiles.filter((p) => {
+        if (filters?.region && filters.region.length > 0 && !filters.region.includes(p.region)) return false;
+        if (filters?.tier && filters.tier.length > 0 && !filters.tier.includes(p.tier)) return false;
+        if (inferredTier && p.tier !== inferredTier) return false;
+        if (filters?.dealerType && filters.dealerType.length > 0) {
+          const dealerType = String(p.extras?.['经销商类型'] ?? '');
+          const allFullNames: string[] = [];
+          for (const dt of filters.dealerType) {
+            for (const [full, simplified] of Object.entries(DEALER_TYPE_TO_FORMAT)) {
+              if (simplified === dt) allFullNames.push(full);
+            }
+          }
+          if (allFullNames.length > 0 && !allFullNames.includes(dealerType) && !filters.dealerType.includes(dealerType)) return false;
+        }
+        if (filters?.isPaid && filters.isPaid.length > 0) {
+          const paid = p.extras?.['付费金额'];
+          const hasPaid = filters.isPaid.includes('true');
+          const hasUnpaid = filters.isPaid.includes('false');
+          if (hasPaid && !hasUnpaid && (!paid || paid === '')) return false;
+          if (!hasPaid && hasUnpaid && (paid && paid !== '')) return false;
+        }
+        if (filters?.customerKeyword) {
+          const kw = filters.customerKeyword.toLowerCase();
+          if (!p.customerCode.toLowerCase().includes(kw) && !p.customerName.toLowerCase().includes(kw)) return false;
+        }
+        if (filters?.salesRep && filters.salesRep.length > 0) {
+          const sr = String(p.extras?.['客户经理'] ?? '');
+          if (!filters.salesRep.includes(sr)) return false;
+        }
+        return true;
+      });
+
+      const codeToGroup = new Map<string, { salesRep: string; region: string; tier: string }>();
+      for (const p of filteredProfiles) {
+        const sr = String(p.extras?.['客户经理'] ?? '');
+        codeToGroup.set(p.customerCode, { salesRep: sr, region: p.region, tier: p.tier });
+      }
+      this.logger.log(`[Memory] BrandSpecStats 客户资料: 匹配客户数=${codeToGroup.size}`);
+
+      // 2) 获取数据集字段和记录
+      const memDataset = this.datasetStore.get(datasetId);
+      if (!memDataset || memDataset.records.length === 0) {
+        this.logger.warn(`[Memory] BrandSpecStats 数据集 ${datasetId} 不存在或无记录`);
+        return { rows: [] };
+      }
+
+      const fields = memDataset.fields;
+      let codeField = this.findCustomerCodeField(fields);
+      let dateField = this.findDateField(fields);
+      const boxCountField = this.findBoxCountField(fields);
+      const salesRepField = fields.find((f: FieldConfig) => f.name === '人员-业代')?.name;
+      const regionField = fields.find((f: FieldConfig) => f.name === '组织-营业所')?.name;
+
+      // 采样验证字段名
+      if (memDataset.records.length > 0) {
+        const sampleKeys = Object.keys(memDataset.records[0] ?? {});
+        if (codeField && !sampleKeys.includes(codeField)) {
+          const fallbackCode = sampleKeys.find((k: string) => /客户.*编码|customer.*code|编码/i.test(k.toLowerCase()))
+            ?? sampleKeys.find((k: string) => /编码|code/i.test(k));
+          if (fallbackCode) { codeField = fallbackCode; }
+        }
+        if (dateField && !sampleKeys.includes(dateField)) {
+          const fallbackDate = sampleKeys.find((k: string) => /日期|date|时间/i.test(k.toLowerCase()))
+            ?? sampleKeys.find((k: string) => /date|日期/i.test(k));
+          if (fallbackDate) { dateField = fallbackDate; }
+        }
+      }
+
+      // 3) 解析并过滤交易记录（去重）
+      const parseDate = (dateStr: string): string | null => {
+        const normalized = String(dateStr ?? '').replace(/[./]/g, '-');
+        const parts = normalized.split('-');
+        if (parts.length !== 3) return null;
+        const y = parseInt(parts[0], 10); const m = parseInt(parts[1], 10); const d = parseInt(parts[2], 10);
+        if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      };
+
+      const seenHashes = new Set<string>();
+      const compositeKey = (salesRep: string, region: string, tier: string) => salesRep + '|||' + region + '|||' + tier;
+      const groupStats = new Map<string, { salesRep: string; region: string; tier: string; totalOrders: number; stores: Set<string> }>();
+
+      for (const record of memDataset.records) {
+        if (!record || typeof record !== 'object') continue;
+        const cd = String(record[codeField ?? ''] ?? '').trim();
+        const dd = String(record[dateField ?? ''] ?? '').trim();
+        if (!cd || !dd) continue;
+        // contentHash 去重模拟
+        const hash = createHash('md5').update(JSON.stringify(record)).digest('hex');
+        if (seenHashes.has(hash)) continue;
+        seenHashes.add(hash);
+
+        // 日期范围过滤
+        const normalizedDate = parseDate(dd);
+        if (!normalizedDate) continue;
+        if (normalizedDate < dateFrom || normalizedDate > dateTo) continue;
+
+        // 品牌筛选
+        if (filters?.brand && filters.brand.length > 0) {
+          const brand = String(record['品牌'] ?? '');
+          if (!filters.brand.includes(brand)) continue;
+        }
+        // 规格筛选
+        if (filters?.specification && filters.specification.length > 0) {
+          const spec = String(record['产品-规格'] ?? '');
+          if (!filters.specification.includes(spec)) continue;
+        }
+        // sheetType 筛选
+        if (filters?.sheetType && filters.sheetType.length > 0) {
+          const st = String(record['_sheetType'] ?? '');
+          if (!filters.sheetType.includes(st as SheetType)) continue;
+        }
+
+        let salesRep = salesRepField ? String(record[salesRepField] ?? '') : '';
+        let region = regionField ? String(record[regionField] ?? '') : '';
+        let tier = String(record['_sheetType'] ?? '').startsWith('一阶') ? '一阶'
+          : String(record['_sheetType'] ?? '').startsWith('二阶') ? '二阶' : '';
+
+        const profileGroup = codeToGroup.get(cd);
+        if (profileGroup) {
+          salesRep = profileGroup.salesRep;
+          region = profileGroup.region;
+          tier = profileGroup.tier;
+        } else {
+          if (filters?.region && filters.region.length > 0 && !filters.region.includes(region)) continue;
+          if (filters?.tier && filters.tier.length > 0 && !filters.tier.includes(tier)) continue;
+          if (inferredTier && tier !== inferredTier) continue;
+          if (!salesRep && !region) continue;
+        }
+
+        const boxValue = boxCountField ? (parseFloat(String(record[boxCountField] ?? '')) || 0) : 0;
+        const key = compositeKey(salesRep, region, tier);
+        const stats = groupStats.get(key);
+        if (stats) {
+          stats.totalOrders += boxValue;
+          stats.stores.add(cd);
+        } else {
+          groupStats.set(key, {
+            salesRep, region, tier,
+            totalOrders: boxValue,
+            stores: new Set([cd]),
+          });
+        }
+      }
+      this.logger.log(`[Memory] BrandSpecStats 交易数据: ${groupStats.size} 个业代组`);
+
+      const rows: BrandSpecStatsRow[] = [];
+      for (const stats of groupStats.values()) {
+        rows.push({
+          salesRep: stats.salesRep,
+          region: stats.region,
+          tier: stats.tier,
+          servicePoints: 0,
+          totalOrders: Math.round(stats.totalOrders),
+          storeCount: stats.stores.size,
+        });
+      }
+      return { rows };
+    } catch (err) {
+      this.logger.error('[Memory] getBrandSpecStats 失败: ' + (err as Error).message, (err as Error).stack);
+      return { rows: [] };
+    }
+  }
+
+  async getBrandSpecMonthlyStats(
+    datasetId: string,
+    salesRep: string,
+    region: string,
+    tier: string,
+    filters?: HeatmapFilterParams,
+  ): Promise<BrandSpecMonthlyStatsResponse> {
+    if (this.useMemoryStorage) {
+      return this.getBrandSpecMonthlyStatsMemory(datasetId, salesRep, region, tier, filters);
+    }
+    try {
+      // 1) 获取客户资料，找到该业代的所有客户编码
+      const profileWhere = this.buildProfileWhereClause({
+        ...filters,
+        salesRep: [salesRep],
+        region: [region],
+        tier: [tier],
+      });
+      const profileSql = profileWhere
+        ? `SELECT customer_code FROM customer_profile WHERE ${profileWhere}`
+        : `SELECT customer_code FROM customer_profile WHERE COALESCE(extras->>'客户经理','') = '${salesRep.replace(/'/g, "''")}' AND region = '${region.replace(/'/g, "''")}' AND tier = '${tier.replace(/'/g, "''")}'`;
+      const profileResult = await this.db.execute(sql.raw(profileSql));
+      const customerCodes = new Set<string>();
+      for (const row of profileResult as unknown as Array<{ customer_code: string }>) {
+        customerCodes.add(row.customer_code);
+      }
+
+      if (customerCodes.size === 0) {
+        this.logger.warn(`BrandSpecMonthlyStats: 未找到业代 ${salesRep} 的客户`);
+        return { rows: [] };
+      }
+
+      // 2) 构建交易数据查询（不按品牌/规格过滤，按维度值聚合）
+      const fields = await this.getDatasetFields(datasetId);
+      const codeField = this.findCustomerCodeField(fields);
+      const dateField = this.findDateField(fields);
+      const boxCountField = this.findBoxCountField(fields);
+
+      const safeCodeField = (codeField ?? '客户-通路客户编码').replace(/'/g, "''");
+      const safeDateField = (dateField ?? '订单-订单日期').replace(/'/g, "''");
+      const safeBoxCountField = boxCountField ? boxCountField.replace(/'/g, "''") : '';
+
+      // 计算6个月日期范围（不含当月）
+      const now = new Date();
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const dateFromStr = new Date(now.getFullYear(), now.getMonth() - 6, 1).toISOString().slice(0, 10);
+      const dateToStr = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+
+      const codeList = Array.from(customerCodes).map((c) => "'" + c.replace(/'/g, "''") + "'").join(',');
+
+      const transConditions: string[] = [
+        `dataset_id = '${datasetId.replace(/'/g, "''")}'`,
+        `content->>'${safeCodeField}' IN (${codeList})`,
+        `content->>'${safeDateField}' IS NOT NULL`,
+        `content->>'${safeDateField}' != ''`,
+        `REPLACE(REPLACE(content->>'${safeDateField}', '.', '-'), '/', '-') >= '${dateFromStr}'`,
+        `REPLACE(REPLACE(content->>'${safeDateField}', '.', '-'), '/', '-') <= '${dateToStr}'`,
+      ];
+      if (filters?.sheetType && filters.sheetType.length > 0) {
+        const vals = filters.sheetType.map((v: string) => "'" + v.replace(/'/g, "''") + "'").join(',');
+        transConditions.push(`content->>'_sheetType' IN (${vals})`);
+      }
+
+      const dedupedTransQuery =
+        'WITH deduped AS (' +
+        ' SELECT DISTINCT ON (content_hash)' +
+        ` content->>'${safeCodeField}' as customer_code,` +
+        ` content->>'${safeDateField}' as trans_date,` +
+        (safeBoxCountField ? ` (content->>'${safeBoxCountField}')::numeric as box_count,` : " 0 as box_count,") +
+        " content->>'品牌' as brand_val," +
+        " content->>'产品-规格' as spec_val" +
+        ' FROM data_record WHERE ' + transConditions.join(' AND ') +
+        ' AND content_hash IS NOT NULL' +
+        ' ORDER BY content_hash, _created_at' +
+        ') SELECT customer_code, trans_date, box_count, brand_val, spec_val FROM deduped';
+      const transResult = await this.db.execute(sql.raw(dedupedTransQuery));
+      this.logger.log(`BrandSpecMonthlyStats 交易数据: dataset=${datasetId}, 查询到 ${transResult.length} 条去重记录`);
+
+      // 3) 按 (维度值, 月份) 聚合
+      const requestedBrands = filters?.brand ?? [];
+      const requestedSpecs = filters?.specification ?? [];
+
+      // key = `${dimensionType}|||${dimensionValue}|||${month}`
+      const dimMonthlyMap = new Map<string, { boxCount: number; stores: Set<string> }>();
+      type TransRow = { customer_code: string; trans_date: string; box_count?: string | number | null; brand_val?: string; spec_val?: string };
+      for (const trans of transResult as unknown as TransRow[]) {
+        const normalized = String(trans.trans_date ?? '').replace(/[./]/g, '-');
+        const parts = normalized.split('-');
+        if (parts.length !== 3) continue;
+        const y = parseInt(parts[0], 10); const m = parseInt(parts[1], 10);
+        if (isNaN(y) || isNaN(m)) continue;
+        const monthKey = `${y}-${String(m).padStart(2, '0')}`;
+        const boxValue = parseFloat(String(trans.box_count ?? '0')) || 0;
+        const brandVal = String(trans.brand_val ?? '').trim();
+        const specVal = String(trans.spec_val ?? '').trim();
+
+        if (brandVal && requestedBrands.includes(brandVal)) {
+          const key = `brand|||${brandVal}|||${monthKey}`;
+          const stats = dimMonthlyMap.get(key);
+          if (stats) { stats.boxCount += boxValue; stats.stores.add(trans.customer_code); }
+          else dimMonthlyMap.set(key, { boxCount: boxValue, stores: new Set([trans.customer_code]) });
+        }
+        if (specVal && requestedSpecs.includes(specVal)) {
+          const key = `spec|||${specVal}|||${monthKey}`;
+          const stats = dimMonthlyMap.get(key);
+          if (stats) { stats.boxCount += boxValue; stats.stores.add(trans.customer_code); }
+          else dimMonthlyMap.set(key, { boxCount: boxValue, stores: new Set([trans.customer_code]) });
+        }
+      }
+
+      // 4) 生成按维度值的6个月列表
+      const rows: BrandSpecDimensionMonthlyStat[] = [];
+      for (const brand of requestedBrands) {
+        const monthly: BrandSpecMonthlyStat[] = [];
+        for (let i = 6; i >= 1; i--) {
+          const d = new Date(currentMonthStart);
+          d.setMonth(d.getMonth() - i);
+          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          const stats = dimMonthlyMap.get(`brand|||${brand}|||${monthKey}`);
+          monthly.push({ month: monthKey, boxCount: stats ? Math.round(stats.boxCount) : 0, storeCount: stats ? stats.stores.size : 0 });
+        }
+        rows.push({ dimensionType: 'brand', dimensionValue: brand, monthly });
+      }
+      for (const spec of requestedSpecs) {
+        const monthly: BrandSpecMonthlyStat[] = [];
+        for (let i = 6; i >= 1; i--) {
+          const d = new Date(currentMonthStart);
+          d.setMonth(d.getMonth() - i);
+          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          const stats = dimMonthlyMap.get(`spec|||${spec}|||${monthKey}`);
+          monthly.push({ month: monthKey, boxCount: stats ? Math.round(stats.boxCount) : 0, storeCount: stats ? stats.stores.size : 0 });
+        }
+        rows.push({ dimensionType: 'specification', dimensionValue: spec, monthly });
+      }
+      return { rows };
+    } catch (err) {
+      this.logger.error('getBrandSpecMonthlyStats 失败: ' + (err as Error).message, (err as Error).stack);
+      return { rows: [] };
+    }
+  }
+
+  /** 内存存储模式下的品牌规格月度统计 */
+  private async getBrandSpecMonthlyStatsMemory(
+    datasetId: string,
+    salesRep: string,
+    region: string,
+    tier: string,
+    filters?: HeatmapFilterParams,
+  ): Promise<BrandSpecMonthlyStatsResponse> {
+    try {
+      const allProfiles = this.customerProfileService.getAllProfiles();
+      const customerCodes = new Set<string>();
+      for (const p of allProfiles) {
+        const sr = String(p.extras?.['客户经理'] ?? '');
+        if (sr === salesRep && p.region === region && p.tier === tier) {
+          customerCodes.add(p.customerCode);
+        }
+      }
+      if (customerCodes.size === 0) {
+        this.logger.warn(`[Memory] BrandSpecMonthlyStats: 未找到业代 ${salesRep} 的客户`);
+        return { rows: [] };
+      }
+
+      const memDataset = this.datasetStore.get(datasetId);
+      if (!memDataset || memDataset.records.length === 0) {
+        return { rows: [] };
+      }
+      const fields = memDataset.fields;
+      let codeField = this.findCustomerCodeField(fields);
+      let dateField = this.findDateField(fields);
+      const boxCountField = this.findBoxCountField(fields);
+
+      if (memDataset.records.length > 0) {
+        const sampleKeys = Object.keys(memDataset.records[0] ?? {});
+        if (codeField && !sampleKeys.includes(codeField)) {
+          const fb = sampleKeys.find((k: string) => /客户.*编码|customer.*code|编码/i.test(k.toLowerCase()))
+            ?? sampleKeys.find((k: string) => /编码|code/i.test(k));
+          if (fb) codeField = fb;
+        }
+        if (dateField && !sampleKeys.includes(dateField)) {
+          const fb = sampleKeys.find((k: string) => /日期|date|时间/i.test(k.toLowerCase()))
+            ?? sampleKeys.find((k: string) => /date|日期/i.test(k));
+          if (fb) dateField = fb;
+        }
+      }
+
+      const now = new Date();
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const dateFromStr = new Date(now.getFullYear(), now.getMonth() - 6, 1).toISOString().slice(0, 10);
+      const dateToStr = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+
+      const requestedBrands = filters?.brand ?? [];
+      const requestedSpecs = filters?.specification ?? [];
+      const dimMonthlyMap = new Map<string, { boxCount: number; stores: Set<string> }>();
+      const seenHashes = new Set<string>();
+
+      for (const record of memDataset.records) {
+        if (!record || typeof record !== 'object') continue;
+        const cd = String(record[codeField ?? ''] ?? '').trim();
+        const dd = String(record[dateField ?? ''] ?? '').trim();
+        if (!cd || !dd) continue;
+        if (!customerCodes.has(cd)) continue;
+        const hash = createHash('md5').update(JSON.stringify(record)).digest('hex');
+        if (seenHashes.has(hash)) continue;
+        seenHashes.add(hash);
+
+        const normalized = dd.replace(/[./]/g, '-');
+        const parts = normalized.split('-');
+        if (parts.length !== 3) continue;
+        const normalizedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        if (normalizedDate < dateFromStr || normalizedDate > dateToStr) continue;
+
+        if (filters?.sheetType && filters.sheetType.length > 0) {
+          const st = String(record['_sheetType'] ?? '');
+          if (!filters.sheetType.includes(st as SheetType)) continue;
+        }
+
+        const monthKey = `${parts[0]}-${parts[1].padStart(2, '0')}`;
+        const boxValue = boxCountField ? (parseFloat(String(record[boxCountField] ?? '')) || 0) : 0;
+        const brandVal = String(record['品牌'] ?? '').trim();
+        const specVal = String(record['产品-规格'] ?? '').trim();
+
+        if (brandVal && requestedBrands.includes(brandVal)) {
+          const key = `brand|||${brandVal}|||${monthKey}`;
+          const stats = dimMonthlyMap.get(key);
+          if (stats) { stats.boxCount += boxValue; stats.stores.add(cd); }
+          else dimMonthlyMap.set(key, { boxCount: boxValue, stores: new Set([cd]) });
+        }
+        if (specVal && requestedSpecs.includes(specVal)) {
+          const key = `spec|||${specVal}|||${monthKey}`;
+          const stats = dimMonthlyMap.get(key);
+          if (stats) { stats.boxCount += boxValue; stats.stores.add(cd); }
+          else dimMonthlyMap.set(key, { boxCount: boxValue, stores: new Set([cd]) });
+        }
+      }
+
+      const rows: BrandSpecDimensionMonthlyStat[] = [];
+      for (const brand of requestedBrands) {
+        const monthly: BrandSpecMonthlyStat[] = [];
+        for (let i = 6; i >= 1; i--) {
+          const d = new Date(currentMonthStart);
+          d.setMonth(d.getMonth() - i);
+          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          const stats = dimMonthlyMap.get(`brand|||${brand}|||${monthKey}`);
+          monthly.push({ month: monthKey, boxCount: stats ? Math.round(stats.boxCount) : 0, storeCount: stats ? stats.stores.size : 0 });
+        }
+        rows.push({ dimensionType: 'brand', dimensionValue: brand, monthly });
+      }
+      for (const spec of requestedSpecs) {
+        const monthly: BrandSpecMonthlyStat[] = [];
+        for (let i = 6; i >= 1; i--) {
+          const d = new Date(currentMonthStart);
+          d.setMonth(d.getMonth() - i);
+          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          const stats = dimMonthlyMap.get(`spec|||${spec}|||${monthKey}`);
+          monthly.push({ month: monthKey, boxCount: stats ? Math.round(stats.boxCount) : 0, storeCount: stats ? stats.stores.size : 0 });
+        }
+        rows.push({ dimensionType: 'specification', dimensionValue: spec, monthly });
+      }
+      return { rows };
+    } catch (err) {
+      this.logger.error('[Memory] getBrandSpecMonthlyStats 失败: ' + (err as Error).message, (err as Error).stack);
       return { rows: [] };
     }
   }

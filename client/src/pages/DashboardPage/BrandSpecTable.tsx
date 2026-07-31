@@ -20,6 +20,7 @@ import type {
   HeatmapFilterParams,
   DatasetSpecOptions,
   BrandSpecStatsRow,
+  BrandSpecDimensionMonthlyStat,
 } from '@shared/api.interface';
 
 interface AddedColumn {
@@ -301,6 +302,10 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
   const [customOptions, setCustomOptions] = useState<StoredCustomOptions>(loadCustomOptions);
   const [addedColumns, setAddedColumns] = useState<AddedColumn[]>([]);
 
+  const [drilldownRowKey, setDrilldownRowKey] = useState<string | null>(null);
+  const [drilldownLoading, setDrilldownLoading] = useState(false);
+  const [drilldownData, setDrilldownData] = useState<BrandSpecDimensionMonthlyStat[]>([]);
+
   const mainTotalMap = useMemo(() => {
     const map: Record<string, number> = {};
     for (const row of displayRows) {
@@ -452,6 +457,44 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
     setDialogOpen(false);
   };
 
+  const handleDrilldown = useCallback(async (row: HeatmapRow) => {
+    if (row.rowType && row.rowType !== 'data') return;
+    const rowKey = getRowKey(row);
+    if (drilldownRowKey === rowKey) {
+      setDrilldownRowKey(null);
+      return;
+    }
+    setDrilldownRowKey(rowKey);
+    setDrilldownLoading(true);
+    setDrilldownData([]);
+    try {
+      const allBrands = addedColumns
+        .filter((col) => col.type === 'brand' && col.values.length > 0)
+        .flatMap((col) => col.values);
+      const allSpecs = addedColumns
+        .filter((col) => col.type === 'specification' && col.values.length > 0)
+        .flatMap((col) => col.values);
+      const drillFilters: HeatmapFilterParams = {
+        ...filters,
+        ...(allBrands.length > 0 ? { brand: Array.from(new Set(allBrands)) } : {}),
+        ...(allSpecs.length > 0 ? { specification: Array.from(new Set(allSpecs)) } : {}),
+      };
+      const result = await datasetApi.getBrandSpecMonthlyStats(
+        datasetId,
+        row.salesRep,
+        row.region,
+        row.tier,
+        drillFilters
+      );
+      setDrilldownData(result.rows);
+    } catch (err: unknown) {
+      logger.error('Failed to load drilldown monthly stats:', err);
+      toast.error('下钻数据加载失败');
+    } finally {
+      setDrilldownLoading(false);
+    }
+  }, [addedColumns, datasetId, filters, drilldownRowKey]);
+
   const loadColumnData = useCallback(
     async (columnId: string, type: 'brand' | 'specification', values: string[]) => {
       if (values.length === 0) return;
@@ -465,7 +508,8 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
           ...filters,
           [type]: values,
         };
-        const [result, statsResult] = await Promise.all([
+        const { dateFrom: threeMonthFrom, dateTo: threeMonthTo } = getRecentThreeMonthsRange();
+        const [heatmapResult, statsResult] = await Promise.allSettled([
           datasetApi.getHeatmapData(
             datasetId,
             dateFrom,
@@ -473,29 +517,41 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
             'day',
             fetchFilters
           ),
-          (async () => {
-            const { dateFrom: threeMonthFrom, dateTo: threeMonthTo } = getRecentThreeMonthsRange();
-            return datasetApi.getBrandSpecStats(
-              datasetId,
-              threeMonthFrom,
-              threeMonthTo,
-              fetchFilters
-            );
-          })(),
+          datasetApi.getBrandSpecStats(
+            datasetId,
+            threeMonthFrom,
+            threeMonthTo,
+            fetchFilters
+          ),
         ]);
-        const subtotalRows = buildRowsWithTotals(result.rows);
+
         const data: Record<string, number> = {};
-        for (const row of subtotalRows) {
-          data[getRowKey(row)] = row.totalOrders ?? 0;
+        if (heatmapResult.status === 'fulfilled') {
+          const subtotalRows = buildRowsWithTotals(heatmapResult.value.rows);
+          for (const row of subtotalRows) {
+            data[getRowKey(row)] = row.totalOrders ?? 0;
+          }
+        } else {
+          logger.error('Failed to load heatmap data for brand/spec column:', heatmapResult.reason);
         }
-        const threeMonthSubtotalRows = buildStatsRowsWithTotals(statsResult.rows);
+
         const threeMonthData: Record<string, number> = {};
         const threeMonthStoreCountData: Record<string, number> = {};
-        for (const row of threeMonthSubtotalRows) {
-          const key = getRowKey(row);
-          threeMonthData[key] = row.totalOrders ?? 0;
-          threeMonthStoreCountData[key] = row.storeCount ?? 0;
+        if (statsResult.status === 'fulfilled') {
+          if (statsResult.value.rows.length === 0) {
+            logger.warn(`BrandSpecStats returned empty rows for column ${columnId} (dateRange: ${threeMonthFrom} ~ ${threeMonthTo})`);
+          }
+          const threeMonthSubtotalRows = buildStatsRowsWithTotals(statsResult.value.rows);
+          for (const row of threeMonthSubtotalRows) {
+            const key = getRowKey(row);
+            threeMonthData[key] = row.totalOrders ?? 0;
+            threeMonthStoreCountData[key] = row.storeCount ?? 0;
+          }
+        } else {
+          logger.error('Failed to load brand-spec-stats data:', statsResult.reason);
+          toast.warning('近三月数据加载失败，请检查后端服务是否正常');
         }
+
         setAddedColumns((prev) =>
           prev.map((col) =>
             col.id === columnId
@@ -653,73 +709,147 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
           <tbody>
             {displayRows.map((row, index) => {
               const isTotalRow = row.rowType && row.rowType !== 'data';
+              const rowKey = getRowKey(row);
+              const isExpanded = drilldownRowKey === rowKey;
+              const totalCols = 5 + addedColumns.length * 4;
+              const months = drilldownData.length > 0 ? drilldownData[0].monthly.map((m) => m.month) : [];
 
               return (
-                <tr
-                  key={`${row.region}-${row.tier}-${row.salesRep}-${index}`}
-                  className={`border-b border-border/60 transition-colors duration-150 ease-out ${getRowBg(row.rowType)} ${getRowText(row.rowType)} ${!isTotalRow ? 'hover:bg-accent/10' : ''}`}
-                >
-                  <td className="px-4 py-2 whitespace-nowrap">
-                    {getRegionCell(row)}
-                  </td>
-                  <td className="px-4 py-2 whitespace-nowrap">
-                    {getTierCell(row)}
-                  </td>
-                  <td className="px-4 py-2 whitespace-nowrap">
-                    {getSalesRepCell(row)}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono tabular-nums whitespace-nowrap">
-                    {formatNumber(row.servicePoints)}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono tabular-nums whitespace-nowrap">
-                    {formatNumber(row.totalOrders)}
-                  </td>
-                  {addedColumns.map((col) => {
-                    const key = getRowKey(row);
-                    const boxCount = col.loading ? undefined : (col.data[key] ?? 0);
-                    const total = mainTotalMap[key] ?? 0;
-                    return (
-                      <React.Fragment key={col.id}>
-                        <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap">
-                          {col.loading ? (
-                            <Skeleton className="h-4 w-12 mx-auto" />
-                          ) : col.values.length > 0 ? (
-                            formatNumber(boxCount ?? 0)
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap text-muted-foreground">
-                          {col.loading ? (
-                            <Skeleton className="h-4 w-12 mx-auto" />
-                          ) : col.values.length > 0 ? (
-                            formatPercentage(boxCount ?? 0, total)
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap">
-                          {col.loading ? (
-                            <Skeleton className="h-4 w-12 mx-auto" />
-                          ) : col.values.length > 0 ? (
-                            formatNumber(col.threeMonthData[key] ?? 0)
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap">
-                          {col.loading ? (
-                            <Skeleton className="h-4 w-12 mx-auto" />
-                          ) : col.values.length > 0 ? (
-                            formatNumber(col.threeMonthStoreCountData[key] ?? 0)
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                      </React.Fragment>
-                    );
-                  })}
-                </tr>
+                <React.Fragment key={`${row.region}-${row.tier}-${row.salesRep}-${index}`}>
+                  <tr
+                    className={`border-b border-border/60 transition-colors duration-150 ease-out ${getRowBg(row.rowType)} ${getRowText(row.rowType)} ${!isTotalRow ? 'hover:bg-accent/10' : ''}`}
+                  >
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      {getRegionCell(row)}
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      {getTierCell(row)}
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      {!isTotalRow ? (
+                        <button
+                          className="text-primary hover:underline cursor-pointer text-left"
+                          onClick={() => handleDrilldown(row)}
+                          title="点击展开/收起近6个月明细"
+                        >
+                          {getSalesRepCell(row)}
+                        </button>
+                      ) : (
+                        getSalesRepCell(row)
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono tabular-nums whitespace-nowrap">
+                      {formatNumber(row.servicePoints)}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono tabular-nums whitespace-nowrap">
+                      {formatNumber(row.totalOrders)}
+                    </td>
+                    {addedColumns.map((col) => {
+                      const key = getRowKey(row);
+                      const boxCount = col.loading ? undefined : (col.data[key] ?? 0);
+                      const total = mainTotalMap[key] ?? 0;
+                      return (
+                        <React.Fragment key={col.id}>
+                          <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap">
+                            {col.loading ? (
+                              <Skeleton className="h-4 w-12 mx-auto" />
+                            ) : col.values.length > 0 ? (
+                              formatNumber(boxCount ?? 0)
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap text-muted-foreground">
+                            {col.loading ? (
+                              <Skeleton className="h-4 w-12 mx-auto" />
+                            ) : col.values.length > 0 ? (
+                              formatPercentage(boxCount ?? 0, total)
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap">
+                            {col.loading ? (
+                              <Skeleton className="h-4 w-12 mx-auto" />
+                            ) : col.values.length > 0 ? (
+                              formatNumber(col.threeMonthData[key] ?? 0)
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap">
+                            {col.loading ? (
+                              <Skeleton className="h-4 w-12 mx-auto" />
+                            ) : col.values.length > 0 ? (
+                              formatNumber(col.threeMonthStoreCountData[key] ?? 0)
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                        </React.Fragment>
+                      );
+                    })}
+                  </tr>
+                  {isExpanded && (
+                    <tr className="bg-accent/5">
+                      <td colSpan={totalCols} className="px-4 py-3">
+                        {drilldownLoading ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Skeleton className="h-8 w-full" />
+                          </div>
+                        ) : drilldownData.length === 0 ? (
+                          <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
+                            该业代在近6个月内无符合条件的交易记录
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs border border-border rounded-sm">
+                              <thead>
+                                <tr className="bg-accent/40 border-b border-border">
+                                  <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap sticky left-0 bg-accent/40">
+                                    维度值
+                                  </th>
+                                  {months.map((month) => (
+                                    <React.Fragment key={month}>
+                                      <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap border-l border-border/40">
+                                        {month} 箱数
+                                      </th>
+                                      <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">
+                                        {month} 门店数
+                                      </th>
+                                    </React.Fragment>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {drilldownData.map((dim) => (
+                                  <tr key={`${dim.dimensionType}-${dim.dimensionValue}`} className="border-b border-border/40 hover:bg-accent/10 transition-colors duration-150">
+                                    <td className="px-3 py-2 whitespace-nowrap font-medium sticky left-0 bg-card">
+                                      <span className="text-muted-foreground text-[10px] mr-1">
+                                        {dim.dimensionType === 'brand' ? '品牌' : '规格'}
+                                      </span>
+                                      {dim.dimensionValue}
+                                    </td>
+                                    {dim.monthly.map((stat) => (
+                                      <React.Fragment key={stat.month}>
+                                        <td className="px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap border-l border-border/40">
+                                          {formatNumber(stat.boxCount)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap">
+                                          {formatNumber(stat.storeCount)}
+                                        </td>
+                                      </React.Fragment>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               );
             })}
           </tbody>

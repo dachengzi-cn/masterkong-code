@@ -454,14 +454,6 @@ const DashboardOverviewPage: React.FC = () => {
             {dateLabel}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate('/dashboard/cumulative')} className="h-8 rounded-full px-3 text-xs font-normal gap-1.5 hover:bg-[hsl(152,60%,42%)] hover:text-white hover:border-[hsl(152,60%,42%)]">
-            <span className="inline-flex items-center justify-center text-base leading-none" >📈</span>累计成交分析<span className="inline-flex items-center justify-center text-base leading-none" >→</span>
-          </Button>
-          <Button variant="outline" onClick={() => navigate('/dashboard/daily')} className="h-8 rounded-full px-3 text-xs font-normal gap-1.5 hover:bg-[hsl(152,60%,42%)] hover:text-white hover:border-[hsl(152,60%,42%)]">
-            <span className="inline-flex items-center justify-center text-base leading-none" >✅</span>当日成交分析<span className="inline-flex items-center justify-center text-base leading-none" >→</span>
-          </Button>
-        </div>
       </div>
 
       {error && (

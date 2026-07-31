@@ -285,6 +285,22 @@ export interface BrandSpecStatsResponse {
   rows: BrandSpecStatsRow[];
 }
 
+export interface BrandSpecMonthlyStat {
+  month: string;
+  boxCount: number;
+  storeCount: number;
+}
+
+export interface BrandSpecDimensionMonthlyStat {
+  dimensionType: 'brand' | 'specification';
+  dimensionValue: string;
+  monthly: BrandSpecMonthlyStat[];
+}
+
+export interface BrandSpecMonthlyStatsResponse {
+  rows: BrandSpecDimensionMonthlyStat[];
+}
+
 export interface UnconvertedStoreItem {
   customerCode: string;
   customerName: string;

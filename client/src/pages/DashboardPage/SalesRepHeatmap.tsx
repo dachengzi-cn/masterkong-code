@@ -13,6 +13,7 @@ import type {
   HeatmapColumnHeader,
   HeatmapFilterParams,
   TimeGranularity,
+  SalesRepDrilldownResponse,
 } from '@shared/api.interface';
 import DrilldownRow from './DrilldownRow';
 
@@ -478,15 +479,184 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
       ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: displayRows.length, c: headers.length - 1 } });
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, '业代成交率');
+
+      // 累计模式：新增"下钻数据"Sheet，形态/品牌/规格横向交叉表展示
+      if (!isDailyMode) {
+        const dataRows = rows.filter((r) => !r.rowType || r.rowType === 'data');
+        if (dataRows.length > 0) {
+          // 批量获取所有业代的下钻数据（每批 10 个并发）
+          const BATCH_SIZE = 10;
+          const drilldownMap = new Map<string, SalesRepDrilldownResponse>();
+          for (let i = 0; i < dataRows.length; i += BATCH_SIZE) {
+            const batch = dataRows.slice(i, i + BATCH_SIZE);
+            const results = await Promise.all(
+              batch.map(async (r) => {
+                try {
+                  const dd = await datasetApi.getSalesRepDrilldown(
+                    datasetId, r.salesRep, r.region, r.tier, dateFrom, dateTo,
+                  );
+                  return { key: `${r.region}|||${r.tier}|||${r.salesRep}`, dd };
+                } catch {
+                  return null;
+                }
+              }),
+            );
+            for (const res of results) {
+              if (res) drilldownMap.set(res.key, res.dd);
+            }
+          }
+
+          // 计算最大维度数（决定列数）
+          let maxDims = 0;
+          for (const dd of drilldownMap.values()) {
+            maxDims = Math.max(maxDims,
+              dd.formatBreakdown.length,
+              dd.brandBreakdown.length,
+              dd.specificationBreakdown.length,
+            );
+          }
+          if (maxDims === 0) maxDims = 1;
+          const numCols = 5 + maxDims; // 所别/阶层/业代/下钻类型/指标 + 维度列
+
+          const drillWs = XLSX.utils.aoa_to_sheet([]);
+          const drillTitle = `下钻数据（时间区间：${dateFrom.replace(/-/g, '/')} ~ ${dateTo.replace(/-/g, '/')}）`;
+          const merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> = [];
+
+          // 标题行
+          XLSX.utils.sheet_add_aoa(drillWs, [[drillTitle]], { origin: 'A1' });
+          merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } });
+          const titleCell = drillWs[XLSX.utils.encode_cell({ r: 0, c: 0 })] as Record<string, unknown>;
+          if (titleCell) {
+            titleCell.s = {
+              font: { bold: true, sz: 12, color: { rgb: '1A2433' } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+            };
+          }
+
+          // 表头行
+          const drillHeaders = ['所别', '阶层', '业代', '下钻类型', '指标'];
+          for (let d = 0; d < maxDims; d++) drillHeaders.push(`维度${d + 1}`);
+          XLSX.utils.sheet_add_aoa(drillWs, [drillHeaders], { origin: 'A2' });
+          for (let c = 0; c < drillHeaders.length; c++) {
+            const cell = drillWs[XLSX.utils.encode_cell({ r: 1, c })] as Record<string, unknown>;
+            if (cell) cell.s = headerStyle;
+          }
+
+          const grayBlue = hslToHex(220, 18, 92);
+          const dimHeaderStyle: CellStyle = {
+            ...fixedCellStyle,
+            font: { sz: 10, color: { rgb: '1A2433' }, bold: true },
+            fill: { fgColor: { rgb: hslToHex(217, 40, 95) } },
+          };
+          const rateStyle: CellStyle = {
+            ...fixedCellStyle,
+            font: { sz: 10, color: { rgb: '0D47A1' }, bold: true },
+          };
+
+          let currentRow = 2; // 0-indexed: Excel 第 3 行开始
+
+          for (const rep of dataRows) {
+            const key = `${rep.region}|||${rep.tier}|||${rep.salesRep}`;
+            const dd = drilldownMap.get(key);
+            if (!dd) continue;
+
+            const repStartRow = currentRow;
+            const sections = [
+              { type: '形态', items: dd.formatBreakdown.map(i => ({ name: i.formatType ?? '', total: i.totalStores, dealt: i.dealtStores, rate: i.dealRate })) },
+              { type: '品牌', items: dd.brandBreakdown.map(i => ({ name: i.brand ?? '', total: i.totalStores, dealt: i.dealtStores, rate: i.dealRate })) },
+              { type: '规格', items: dd.specificationBreakdown.map(i => ({ name: i.specification ?? '', total: i.totalStores, dealt: i.dealtStores, rate: i.dealRate })) },
+            ];
+
+            for (const section of sections) {
+              const sectionStartRow = currentRow;
+
+              // 维度名称行（横向排列）
+              const dimVals: Array<string | number> = [rep.region, rep.tier, rep.salesRep, section.type, ''];
+              for (const item of section.items) dimVals.push(item.name);
+              while (dimVals.length < numCols) dimVals.push('');
+              for (let c = 0; c < numCols; c++) {
+                const ref = XLSX.utils.encode_cell({ r: currentRow, c });
+                drillWs[ref] = { v: dimVals[c], t: 's', s: dimHeaderStyle } as never;
+              }
+              currentRow++;
+
+              // 点数行
+              const ptsVals: Array<string | number> = ['', '', '', '', '点数'];
+              for (const item of section.items) ptsVals.push(item.total);
+              while (ptsVals.length < numCols) ptsVals.push('');
+              for (let c = 0; c < numCols; c++) {
+                const ref = XLSX.utils.encode_cell({ r: currentRow, c });
+                drillWs[ref] = { v: ptsVals[c], t: typeof ptsVals[c] === 'number' ? 'n' : 's', s: fixedCellStyle } as never;
+              }
+              currentRow++;
+
+              // 成交行
+              const dealtVals: Array<string | number> = ['', '', '', '', '成交'];
+              for (const item of section.items) dealtVals.push(item.dealt);
+              while (dealtVals.length < numCols) dealtVals.push('');
+              for (let c = 0; c < numCols; c++) {
+                const ref = XLSX.utils.encode_cell({ r: currentRow, c });
+                drillWs[ref] = { v: dealtVals[c], t: typeof dealtVals[c] === 'number' ? 'n' : 's', s: fixedCellStyle } as never;
+              }
+              currentRow++;
+
+              // 成交率行
+              const rateVals: Array<string | number> = ['', '', '', '', '成交率'];
+              for (const item of section.items) rateVals.push(`${item.rate}%`);
+              while (rateVals.length < numCols) rateVals.push('');
+              for (let c = 0; c < numCols; c++) {
+                const ref = XLSX.utils.encode_cell({ r: currentRow, c });
+                drillWs[ref] = { v: rateVals[c], t: 's', s: rateStyle } as never;
+              }
+              currentRow++;
+
+              // 合并下钻类型单元格（4 行）
+              merges.push({ s: { r: sectionStartRow, c: 3 }, e: { r: currentRow - 1, c: 3 } });
+            }
+
+            // 合并所别/阶层/业代单元格（12 行）
+            merges.push({ s: { r: repStartRow, c: 0 }, e: { r: currentRow - 1, c: 0 } });
+            merges.push({ s: { r: repStartRow, c: 1 }, e: { r: currentRow - 1, c: 1 } });
+            merges.push({ s: { r: repStartRow, c: 2 }, e: { r: currentRow - 1, c: 2 } });
+
+            // 灰蓝色空白分隔行
+            for (let c = 0; c < numCols; c++) {
+              const ref = XLSX.utils.encode_cell({ r: currentRow, c });
+              drillWs[ref] = { v: '', t: 's', s: { fill: { fgColor: { rgb: grayBlue } } } } as never;
+            }
+            currentRow++;
+          }
+
+          // 仅在有数据时添加 Sheet
+          if (currentRow > 2) {
+            drillWs['!merges'] = merges;
+            const colWidths = [
+              { wch: 10 }, { wch: 6 }, { wch: 16 }, { wch: 8 }, { wch: 8 },
+            ];
+            for (let d = 0; d < maxDims; d++) colWidths.push({ wch: 12 });
+            drillWs['!cols'] = colWidths;
+            drillWs['!ref'] = XLSX.utils.encode_range({
+              s: { r: 0, c: 0 },
+              e: { r: currentRow - 1, c: numCols - 1 },
+            });
+            XLSX.utils.book_append_sheet(wb, drillWs, '下钻数据');
+          }
+        }
+      }
+
       XLSX.writeFile(wb, `${filters.mode === 'daily' ? '业代当日成交率' : '业代累计成交率'}_${timeLabel}.xlsx`);
-      toast.success(`已导出 ${displayRows.length} 条${filters.mode === 'daily' ? '当日' : '累计'}成交率数据`);
+      const drillCount = !isDailyMode ? rows.filter((r) => !r.rowType || r.rowType === 'data').length : 0;
+      toast.success(
+        `已导出 ${displayRows.length} 条${filters.mode === 'daily' ? '当日' : '累计'}成交率数据` +
+        (drillCount > 0 ? `，含 ${drillCount} 名业代下钻数据` : ''),
+      );
     } catch (err) {
       logger.error('Failed to export heatmap:', err);
       toast.error('导出失败，请重试');
     } finally {
       setExporting(false);
     }
-  }, [displayRows, columns, granularity, bottom30ByPeriod, timeLabel, exporting, filters.mode]);
+  }, [displayRows, columns, granularity, bottom30ByPeriod, timeLabel, exporting, filters.mode, rows, datasetId, dateFrom, dateTo, isDailyMode]);
 
   return (
     <div className="bg-card border border-border rounded-sm">

@@ -19,6 +19,7 @@ import type {
   TimeGranularity,
   GetUnconvertedStoresResponse,
   BrandSpecStatsResponse,
+  BrandSpecMonthlyStatsResponse,
   SalesRepDrilldownResponse,
   SystemStatusResponse,
   CheckDuplicatesRequest,
@@ -283,6 +284,32 @@ export class DatasetController {
   @Get('brand-spec-options')
   async getAllBrandSpecOptions(): Promise<{ brands: string[]; specifications: string[] }> {
     return this.datasetService.getAllBrandSpecOptions();
+  }
+
+  @Get(':id/brand-spec-monthly')
+  async getBrandSpecMonthlyStats(
+    @Param('id') id: string,
+    @Query('salesRep') salesRep: string,
+    @Query('region') region: string,
+    @Query('tier') tier: string,
+    @Query('brand') brand?: string,
+    @Query('specification') specification?: string,
+    @Query('sheetType') sheetType?: string,
+    @Query('dealerType') dealerType?: string,
+    @Query('isPaid') isPaid?: string,
+    @Query('customerKeyword') customerKeyword?: string,
+    @Query('route') route?: string,
+  ): Promise<BrandSpecMonthlyStatsResponse> {
+    const split = (v?: string) => v ? v.split(',').filter(Boolean) : undefined;
+    return this.datasetService.getBrandSpecMonthlyStats(id, salesRep, region, tier, {
+      brand: split(brand),
+      specification: split(specification),
+      sheetType: split(sheetType) as HeatmapFilterParams['sheetType'],
+      dealerType: split(dealerType),
+      isPaid: split(isPaid),
+      customerKeyword,
+      route: split(route),
+    });
   }
 
   @Get(':id/spec-options')
