@@ -49,6 +49,7 @@ interface FilterBarProps {
   onConfirm?: () => void;
   confirming?: boolean;
   afterAdvancedFilters?: React.ReactNode;
+  rightActions?: React.ReactNode;
 }
 
 const DEFAULT_SHEET_TYPES: SheetType[] = [];
@@ -97,6 +98,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
   onConfirm,
   confirming = false,
   afterAdvancedFilters,
+  rightActions,
 }) => {
   const filters = rawFilters || {};
   const [options, setOptions] = useState<FilterOptions>({ regions: [], tiers: [], dealerTypes: [], brands: [], salesReps: [], specifications: [] });
@@ -518,6 +520,8 @@ const FilterBar: React.FC<FilterBarProps> = ({
                 下载未成交门店
               </Button>
             )}
+
+            {rightActions && <div className="flex items-center gap-2 ml-auto">{rightActions}</div>}
           </div>
 
           <CollapsibleContent>

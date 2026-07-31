@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { toast } from 'sonner';
@@ -14,6 +14,7 @@ import {
   EmptyContent,
 } from '@/components/ui/empty';
 import type { ExpiryAnalysisFilters, ExpiryAnalysisResult, ExpiryDrilldownResult } from '@shared/api.interface';
+import { AiAnalysisPanel } from '@/components/business-ui/ai-analysis-panel';
 import ExpiryKpiCards from './ExpiryKpiCards';
 import ExpiryFilterBar from './ExpiryFilterBar';
 import ExpiryTrendChart from './ExpiryTrendChart';
@@ -68,6 +69,28 @@ const ExpiryExpensePage: React.FC = () => {
   const [activeDrilldown, setActiveDrilldown] = useState<'store' | 'spec' | null>(null);
   const [drilldownData, setDrilldownData] = useState<ExpiryDrilldownResult | null>(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
+
+  // 为 AI 分析准备输入数据
+  const aiInputData = useMemo(() => {
+    if (!data) return { filters } as Record<string, unknown>;
+    return {
+      filters,
+      kpis: {
+        totalAmount: data.kpis.totalAmount,
+        monthOverMonthChange: data.kpis.monthOverMonthChange,
+        involvedStoreCount: data.kpis.involvedStoreCount,
+      },
+      trend: data.trend.slice(0, 24),
+      regionRank: data.regionRank.slice(0, 10),
+      tierRank: data.tierRank.slice(0, 10),
+      dealerTypeRank: data.dealerTypeRank.slice(0, 10),
+      businessRank: data.businessRank.slice(0, 10),
+      specificationRank: data.specificationRank.slice(0, 10),
+      warnings: data.warnings,
+      topCurrentMonthOffices: data.topCurrentMonthOffices,
+      topThreeMonthOffices: data.topThreeMonthOffices,
+    };
+  }, [data, filters]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -228,6 +251,15 @@ const ExpiryExpensePage: React.FC = () => {
         onReset={handleReset}
         onExport={handleExport}
         exportDisabled={loading || !data || displayData.kpis.totalAmount === 0}
+        rightActions={
+          <AiAnalysisPanel
+            pageScope="expiry"
+            inputData={aiInputData}
+            defaultQuestion="请分析当前临期费用数据，识别费用趋势、区域分布与高风险规格/门店。"
+            disabled={!data || loading}
+            size="sm"
+          />
+        }
       />
 
       {error && (

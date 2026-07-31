@@ -104,7 +104,7 @@ export class AiConfigService implements OnModuleInit {
             baseUrl: builtin.baseUrl,
             model: builtin.model,
             isBuiltin: true,
-            isActive: builtin.configKey === BUILTIN_AI_CONFIGS[0].configKey,
+            isActive: false,
             isEnabled: true,
           });
           this.logger.log(`Seeded built-in AI config: ${builtin.configKey}`);

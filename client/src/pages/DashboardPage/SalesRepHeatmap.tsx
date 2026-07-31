@@ -26,6 +26,7 @@ interface SalesRepHeatmapProps {
   granularity: TimeGranularity;
   onGranularityChange: (g: TimeGranularity) => void;
   onLoadingChange?: (loading: boolean) => void;
+  onDataChange?: (data: HeatmapResponse | null) => void;
 }
 
 const FIXED_COLS = [
@@ -294,7 +295,7 @@ const HeatmapRowComponent = memo(({
 HeatmapRowComponent.displayName = 'HeatmapRowComponent';
 
 const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
-  datasetId, filters, dateFrom, dateTo, granularity, onGranularityChange, onLoadingChange,
+  datasetId, filters, dateFrom, dateTo, granularity, onGranularityChange, onLoadingChange, onDataChange,
 }) => {
   const [data, setData] = useState<HeatmapResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -321,6 +322,11 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
   }, [datasetId, dateFrom, dateTo, granularity, filters]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // 将数据变化同步给父组件
+  useEffect(() => {
+    onDataChange?.(data);
+  }, [data, onDataChange]);
 
   // 将内部 loading 状态同步给父组件，用于确认按钮的查询中状态
   useEffect(() => {

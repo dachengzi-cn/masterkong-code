@@ -46,6 +46,7 @@ interface AtpPerformanceProps {
   dateFrom: string;
   dateTo: string;
   onHasDataChange?: (hasData: boolean) => void;
+  onDataChange?: (data: AtpPerformanceResponse | null) => void;
 }
 
 interface ColumnDef {
@@ -586,6 +587,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
   dateFrom,
   dateTo,
   onHasDataChange,
+  onDataChange,
 }) => {
   const navigate = useNavigate();
   const [data, setData] = useState<AtpPerformanceResponse | null>(null);
@@ -637,6 +639,10 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
   useEffect(() => {
     onHasDataChange?.(baseRows.length > 0);
   }, [baseRows.length, onHasDataChange]);
+
+  useEffect(() => {
+    onDataChange?.(data);
+  }, [data, onDataChange]);
 
   const displayRows = useMemo<DisplayRow[]>(() => {
     if (baseRows.length === 0) return [];

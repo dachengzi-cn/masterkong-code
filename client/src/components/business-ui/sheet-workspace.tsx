@@ -18,6 +18,7 @@ const ExpiryExpensePage = lazy(() => import('@/pages/ExpiryExpensePage/ExpiryExp
 const AtpExpensePage = lazy(() => import('@/pages/AtpExpensePage/AtpExpensePage'));
 const OverstockPage = lazy(() => import('@/pages/OverstockPage/OverstockPage'));
 const ServiceAnalysisPage = lazy(() => import('@/pages/ServiceAnalysisPage/ServiceAnalysisPage'));
+const DocGenPage = lazy(() => import('@/pages/DocGenPage/DocGenPage'));
 
 export interface SheetItem {
   id: string;
@@ -72,6 +73,8 @@ function SheetContent({ path }: { path: string }) {
         return wrap(<OverstockPage />);
       case '/service-analysis':
         return wrap(<ServiceAnalysisPage />);
+      case '/ai-docs':
+        return wrap(<DocGenPage />);
       default:
         return (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

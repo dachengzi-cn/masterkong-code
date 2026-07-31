@@ -1,29 +1,30 @@
 import type { AiConfig } from './ai-config.types';
 
+// 内置 AI 模型配置，启动时自动写入数据库（API Key 加密存储）
 export const BUILTIN_AI_CONFIGS: AiConfig[] = [
   {
-    configKey: 'agnes',
-    name: 'Agnes',
+    configKey: 'nvidia-glm-5-2',
+    name: '英伟达-GLM-5.2',
     providerId: 'custom',
-    apiKey: 'sk-ps9qCFtCLPHRzDmCHUqCo2M3gcGS4Jhebbrpa9BjUQrqPpNu',
-    baseUrl: 'https://apihub.agnes-ai.com/v1',
-    model: 'agnes-2.0-flash',
+    apiKey: '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',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    model: 'z-ai/glm-5.2',
+  },
+  {
+    configKey: 'nvidia-minimax-m3',
+    name: '英伟达-MiniMax-M3',
+    providerId: 'custom',
+    apiKey: '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',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    model: 'minimaxai/minimax-m3',
   },
   {
     configKey: 'nvidia-deepseek-v4',
     name: '英伟达-Deepseek V4',
     providerId: 'custom',
-    apiKey: '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',
+    apiKey: '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',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     model: 'deepseek-ai/deepseek-v4-pro',
-  },
-  {
-    configKey: 'nvidia-glm-5-2',
-    name: '英伟达-GLM-5.2',
-    providerId: 'custom',
-    apiKey: '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',
-    baseUrl: 'https://integrate.api.nvidia.com/v1',
-    model: 'z-ai/glm-5.2',
   },
 ];
 

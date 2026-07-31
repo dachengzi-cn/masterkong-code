@@ -20,6 +20,7 @@ interface ExpiryFilterBarProps {
   onReset: () => void;
   onExport: () => void;
   exportDisabled: boolean;
+  rightActions?: React.ReactNode;
 }
 
 const ExpiryFilterBar: React.FC<ExpiryFilterBarProps> = ({
@@ -29,6 +30,7 @@ const ExpiryFilterBar: React.FC<ExpiryFilterBarProps> = ({
   onReset,
   onExport,
   exportDisabled,
+  rightActions,
 }) => {
   const hasFilters =
     (filters.monthFrom?.length ?? 0) > 0 ||
@@ -132,7 +134,8 @@ const ExpiryFilterBar: React.FC<ExpiryFilterBarProps> = ({
           />
         </div>
       </div>
-      <div className="flex items-center justify-end mt-3">
+      <div className="flex items-center justify-end mt-3 gap-2">
+        {rightActions}
         <Button
           variant="outline"
           onClick={onExport}

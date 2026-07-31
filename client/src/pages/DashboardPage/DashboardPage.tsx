@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { datasetApi } from '@client/src/api/index';
-import type { DatasetDetail, HeatmapFilterParams, UnconvertedStoreItem, TimeGranularity } from '@shared/api.interface';
+import type { DatasetDetail, HeatmapFilterParams, UnconvertedStoreItem, TimeGranularity, HeatmapResponse } from '@shared/api.interface';
 import { getDealerTypesForCompositeFormats } from './composite-format';
 import { DEFAULT_SHEET_TYPES } from './FilterBar';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '@/components/ui/empty';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import FilterBar from './FilterBar';
 import type { DateRangeValue } from './FilterBar';
 import SalesRepHeatmap from './SalesRepHeatmap';
+import { AiAnalysisPanel } from '@/components/business-ui/ai-analysis-panel';
 
 const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cumulative' }) => {
   const { datasetId: rawDatasetId } = useParams<{ datasetId: string }>();
@@ -41,6 +42,9 @@ const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cu
 
   // 查询进行中的全局状态（用于确认按钮 loading）
   const [querying, setQuerying] = useState(false);
+
+  // Heatmap 数据，用于 AI 分析
+  const [heatmapData, setHeatmapData] = useState<HeatmapResponse | null>(null);
 
   const effectiveFilters = useMemo((): HeatmapFilterParams => {
     let result = { ...filters, mode };
@@ -83,6 +87,40 @@ const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cu
 
   const committedDateFrom = committedDateRange ? formatDateStr(committedDateRange.from) : null;
   const committedDateTo = committedDateRange ? formatDateStr(committedDateRange.to) : null;
+
+  const pageScope = mode === 'daily' ? 'daily' : 'cumulative';
+
+  // 为 AI 分析准备输入数据
+  const aiInputData = useMemo(() => {
+    if (!heatmapData) return { mode, filters: effectiveCommittedFilters } as Record<string, unknown>;
+    return {
+      mode,
+      filters: effectiveCommittedFilters,
+      summary: {
+        totalRows: heatmapData.rows.length,
+        dateFrom: heatmapData.dateFrom,
+        dateTo: heatmapData.dateTo,
+        granularity: heatmapData.granularity,
+        daysInMonth: heatmapData.daysInMonth,
+      },
+      // 对 AI 输入做采样截断，避免 token 过大
+      rows: heatmapData.rows.slice(0, 50).map((r) => ({
+        salesRep: r.salesRep,
+        region: r.region,
+        tier: r.tier,
+        servicePoints: r.servicePoints,
+        totalOrders: r.totalOrders,
+        rowType: r.rowType,
+        dailyData: r.dailyData?.map((d) => ({
+          label: d.label,
+          rate: d.rate,
+          stores: d.stores,
+          routeStores: d.routeStores,
+          orders: d.orders,
+        })),
+      })),
+    };
+  }, [heatmapData, mode, effectiveCommittedFilters]);
 
   const handleConfirm = () => {
     setCommittedFilters({ ...filters });
@@ -278,6 +316,15 @@ const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cu
         onReset={() => setDateRange(defaultDateRange)}
         onConfirm={handleConfirm}
         confirming={querying}
+        rightActions={
+          <AiAnalysisPanel
+            pageScope={pageScope}
+            inputData={aiInputData}
+            defaultQuestion={`请分析当前${mode === 'daily' ? '当日' : '累计'}成交数据，识别趋势、异常与可执行建议。`}
+            disabled={!heatmapData}
+            size="sm"
+          />
+        }
       />
       {datasetId && (
         effectiveCommittedFilters && committedDateFrom && committedDateTo && committedGranularity ? (
@@ -289,6 +336,7 @@ const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cu
             granularity={committedGranularity}
             onGranularityChange={setGranularity}
             onLoadingChange={setQuerying}
+            onDataChange={setHeatmapData}
           />
         ) : (
           <div className="flex items-center justify-center min-h-[400px] bg-card border border-border rounded-sm">

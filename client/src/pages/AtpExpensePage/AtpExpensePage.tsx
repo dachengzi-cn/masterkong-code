@@ -14,7 +14,8 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { customerApi, datasetApi } from '@client/src/api/index';
 import { logger } from '@lark-apaas/client-toolkit/logger';
-import type { FilterOptions, HeatmapFilterParams } from '@shared/api.interface';
+import type { FilterOptions, HeatmapFilterParams, AtpPerformanceResponse } from '@shared/api.interface';
+import { AiAnalysisPanel } from '@/components/business-ui/ai-analysis-panel';
 import {
   ALL_COMPOSITE_FORMATS,
   getCompositeFormatsForDealerTypes,
@@ -50,6 +51,7 @@ const AtpExpensePage: React.FC = () => {
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [filters, setFilters] = useState<HeatmapFilterParams>({ tier: ['一阶'] });
   const [hasAtpData, setHasAtpData] = useState(false);
+  const [atpData, setAtpData] = useState<AtpPerformanceResponse | null>(null);
   const [options, setOptions] = useState<FilterOptions>({
     regions: [],
     tiers: [],
@@ -201,6 +203,37 @@ const AtpExpensePage: React.FC = () => {
     toast.info('ATP费用分析模块开发中，敬请期待');
   }, []);
 
+  // 为 AI 分析准备输入数据
+  const aiInputData = useMemo(() => {
+    if (!atpData) return { filters } as Record<string, unknown>;
+    return {
+      filters,
+      dateFrom: dateRange.from,
+      dateTo: dateRange.to,
+      summary: {
+        totalRows: atpData.rows.length,
+      },
+      rows: atpData.rows.slice(0, 50).map((r) => ({
+        region: r.region,
+        tier: r.tier,
+        salesRep: r.salesRep,
+        totalPoints: r.totalPoints,
+        paidPoints: r.paidPoints,
+        paidAmount: r.paidAmount,
+        totalStoreSales: r.totalStoreSales,
+        paidStoreSales: r.paidStoreSales,
+        paidPointFeeRatio: r.paidPointFeeRatio,
+        paidPointSalesRatio: r.paidPointSalesRatio,
+        feeRatioLe10: r.feeRatioLe10,
+        feeRatio10to15: r.feeRatio10to15,
+        feeRatioGt15: r.feeRatioGt15,
+        feeRatioNoDeal: r.feeRatioNoDeal,
+        salesLt1000Count: r.salesLt1000Count,
+        salesLt2000Count: r.salesLt2000Count,
+      })),
+    };
+  }, [atpData, filters, dateRange.from, dateRange.to]);
+
   const handleRouteCancel = useCallback(() => {
     setRouteDialogOpen(false);
     setSelectedRoutes([]);
@@ -304,6 +337,15 @@ const AtpExpensePage: React.FC = () => {
           </div>
 
         </div>
+        <div className="flex items-center justify-end mt-3 gap-2">
+          <AiAnalysisPanel
+            pageScope="atp"
+            inputData={aiInputData}
+            defaultQuestion="请分析当前ATP费用绩效数据，识别费比分布、业代绩效差异与优化机会。"
+            disabled={!atpData || atpData.rows.length === 0}
+            size="sm"
+          />
+        </div>
       </FilterBar>
       )}
 
@@ -313,6 +355,7 @@ const AtpExpensePage: React.FC = () => {
         dateFrom={dateRange.from}
         dateTo={dateRange.to}
         onHasDataChange={setHasAtpData}
+        onDataChange={setAtpData}
       />
 
       {/* Route Selection Dialog (kept for future use) */}

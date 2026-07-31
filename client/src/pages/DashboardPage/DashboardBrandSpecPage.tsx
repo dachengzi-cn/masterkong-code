@@ -13,6 +13,7 @@ import FilterBar from './FilterBar';
 import type { DateRangeValue } from './FilterBar';
 import BrandSpecTable from './BrandSpecTable';
 import type { BrandSpecTableRef } from './BrandSpecTable';
+import { AiAnalysisPanel } from '@/components/business-ui/ai-analysis-panel';
 
 const DashboardBrandSpecPage: React.FC = () => {
   const { datasetId: rawDatasetId } = useParams<{ datasetId: string }>();
@@ -62,6 +63,28 @@ const DashboardBrandSpecPage: React.FC = () => {
   const [tableLoading, setTableLoading] = useState(false);
   const [tableError, setTableError] = useState<string | null>(null);
   const brandSpecTableRef = useRef<BrandSpecTableRef | null>(null);
+
+  // 为 AI 分析准备输入数据
+  const aiInputData = useMemo(() => {
+    if (!tableData) return { filters: effectiveFilters } as Record<string, unknown>;
+    return {
+      filters: effectiveFilters,
+      dateFrom,
+      dateTo,
+      granularity,
+      summary: {
+        totalRows: tableData.rows.length,
+      },
+      rows: tableData.rows.slice(0, 50).map((r) => ({
+        salesRep: r.salesRep,
+        region: r.region,
+        tier: r.tier,
+        servicePoints: r.servicePoints,
+        totalOrders: r.totalOrders,
+        rowType: r.rowType,
+      })),
+    };
+  }, [tableData, effectiveFilters, dateFrom, dateTo, granularity]);
 
   const fetchTableData = React.useCallback(async () => {
     if (!datasetId || !effectiveFilters.sheetType || effectiveFilters.sheetType.length === 0) {
@@ -166,6 +189,15 @@ const DashboardBrandSpecPage: React.FC = () => {
         showBrandFilter={false}
         showSpecFilter={false}
         showDownloadUnconverted={false}
+        rightActions={
+          <AiAnalysisPanel
+            pageScope="brand-spec"
+            inputData={aiInputData}
+            defaultQuestion="请分析当前品牌规格成交数据，识别各品牌/规格的成交覆盖情况与组合机会。"
+            disabled={!tableData}
+            size="sm"
+          />
+        }
         afterAdvancedFilters={
           datasetId && effectiveFilters.sheetType && effectiveFilters.sheetType.length > 0 ? (
             <div className="flex items-center gap-2 mt-3">

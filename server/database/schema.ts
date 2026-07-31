@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 import { sql } from 'drizzle-orm';
-import { boolean, foreignKey, index, integer, jsonb, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
+import { boolean, foreignKey, index, integer, jsonb, numeric, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -292,7 +292,184 @@ export const aiModelConfig = pgTable("ai_model_config", {
 	index("idx_ai_model_config_builtin").on(table.isBuiltin),
 ]);
 
+export const aiSkill = pgTable("ai_skill", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	skillKey: varchar("skill_key", { length: 255 }).notNull().unique(),
+	name: varchar("name", { length: 255 }).notNull(),
+	description: text("description"),
+	pageScope: varchar("page_scope", { length: 255 }).notNull(),
+	promptTemplate: text("prompt_template").notNull(),
+	outputSchema: jsonb("output_schema").notNull().default('{}'),
+	defaultConfigKey: varchar("default_config_key", { length: 255 }),
+	maxTokens: integer("max_tokens").default(4096),
+	isBuiltin: boolean("is_builtin").notNull().default(false),
+	isEnabled: boolean("is_enabled").notNull().default(true),
+	version: integer("version").notNull().default(1),
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+	updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+	uniqueIndex("ai_skill_skill_key_key").on(table.skillKey),
+	index("idx_ai_skill_page_scope").on(table.pageScope),
+	index("idx_ai_skill_builtin").on(table.isBuiltin),
+]);
+
+export const aiAnalysisSession = pgTable("ai_analysis_session", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	skillKey: varchar("skill_key", { length: 255 }).notNull(),
+	pageScope: varchar("page_scope", { length: 255 }).notNull(),
+	collaborationMode: varchar("collaboration_mode", { length: 100 }).notNull().default('independent'),
+	configKeys: jsonb("config_keys").notNull().default('[]'),
+	inputData: jsonb("input_data").notNull().default('{}'),
+	userQuestion: text("user_question"),
+	outputData: jsonb("output_data").notNull().default('{}'),
+	status: varchar("status", { length: 50 }).notNull().default('pending'),
+	errorMessage: text("error_message"),
+	latencyMs: integer("latency_ms"),
+	usage: jsonb("usage"),
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+	updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+	index("idx_ai_analysis_session_skill").on(table.skillKey),
+	index("idx_ai_analysis_session_page").on(table.pageScope),
+	index("idx_ai_analysis_session_status").on(table.status),
+]);
+
+export const aiAnalysisConfig = pgTable("ai_analysis_config", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	collaborationMode: varchar("collaboration_mode", { length: 100 }).notNull().default('independent'),
+	defaultConfigKey: varchar("default_config_key", { length: 255 }),
+	ensembleConfigKeys: jsonb("ensemble_config_keys").notNull().default('[]'),
+	plannerConfigKey: varchar("planner_config_key", { length: 255 }),
+	executorConfigKey: varchar("executor_config_key", { length: 255 }),
+	criticConfigKey: varchar("critic_config_key", { length: 255 }),
+	isEnabled: boolean("is_enabled").notNull().default(true),
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+	updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+});
+
+export const aiDesignDoc = pgTable("ai_design_doc", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	docKey: varchar("doc_key", { length: 255 }).notNull(),
+	title: varchar("title", { length: 255 }).notNull(),
+	category: varchar("category", { length: 100 }).notNull(),
+	content: text("content").notNull().default(''),
+	version: integer("version").notNull().default(1),
+	isLatest: boolean("is_latest").notNull().default(true),
+	source: varchar("source", { length: 50 }).notNull().default('manual'),
+	status: varchar("status", { length: 50 }).notNull().default('draft'),
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+	updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+	index("idx_ai_design_doc_key").on(table.docKey),
+	index("idx_ai_design_doc_category").on(table.category),
+	index("idx_ai_design_doc_latest").on(table.docKey, table.isLatest),
+	index("idx_ai_design_doc_status").on(table.status),
+]);
+
+// ========== M3-2: Skill 基准体系 - 评估反馈表 ==========
+export const aiAnalysisFeedback = pgTable("ai_analysis_feedback", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	sessionId: uuid("session_id").notNull(),
+	skillKey: varchar("skill_key", { length: 255 }).notNull(),
+	pageScope: varchar("page_scope", { length: 255 }).notNull(),
+	// 评分 1-5
+	rating: integer("rating").notNull(),
+	// 反馈维度：accuracy / completeness / usefulness / clarity
+	dimensions: jsonb("dimensions").notNull().default(sql`'{}'::jsonb`),
+	comment: text("comment"),
+	// 问题类型：missing_analysis / wrong_data / format_issue / too_generic / other
+	issues: jsonb("issues").notNull().default(sql`'[]'::jsonb`),
+	isConsumed: boolean("is_consumed").notNull().default(false),
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+	updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+	index("idx_ai_feedback_session").on(table.sessionId),
+	index("idx_ai_feedback_skill").on(table.skillKey),
+	index("idx_ai_feedback_rating").on(table.rating),
+	index("idx_ai_feedback_consumed").on(table.isConsumed),
+	index("idx_ai_feedback_created").on(table.createdAt),
+]);
+
+export const aiSkillMetric = pgTable("ai_skill_metric", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	skillKey: varchar("skill_key", { length: 255 }).notNull().unique(),
+	period: varchar("period", { length: 50 }).notNull().default('all-time'),
+	totalExecutions: integer("total_executions").notNull().default(0),
+	successfulExecutions: integer("successful_executions").notNull().default(0),
+	failedExecutions: integer("failed_executions").notNull().default(0),
+	schemaValidPasses: integer("schema_valid_passes").notNull().default(0),
+	schemaValidFailures: integer("schema_valid_failures").notNull().default(0),
+	avgLatencyMs: numeric("avg_latency_ms", { precision: 12, scale: 2 }).notNull().default('0'),
+	p95LatencyMs: numeric("p95_latency_ms", { precision: 12, scale: 2 }).notNull().default('0'),
+	avgTotalTokens: numeric("avg_total_tokens", { precision: 12, scale: 2 }).notNull().default('0'),
+	totalFeedbacks: integer("total_feedbacks").notNull().default(0),
+	avgRating: numeric("avg_rating", { precision: 3, scale: 2 }).notNull().default('0'),
+	ratingDistribution: jsonb("rating_distribution").notNull().default(sql`'{"1":0,"2":0,"3":0,"4":0,"5":0}'::jsonb`),
+	issueDistribution: jsonb("issue_distribution").notNull().default(sql`'{}'::jsonb`),
+	lastExecutionAt: customTimestamptz("last_execution_at", { precision: 3 }),
+	lastCalculatedAt: customTimestamptz("last_calculated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+	updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+	index("idx_ai_skill_metric_key").on(table.skillKey),
+	index("idx_ai_skill_metric_period").on(table.period),
+]);
+
+export const aiSkillIteration = pgTable("ai_skill_iteration", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	skillKey: varchar("skill_key", { length: 255 }).notNull(),
+	fromVersion: integer("from_version").notNull(),
+	toVersion: integer("to_version").notNull(),
+	iterationType: varchar("iteration_type", { length: 50 }).notNull().default('manual'),
+	reason: text("reason").notNull(),
+	changesSummary: jsonb("changes_summary").notNull().default(sql`'{}'::jsonb`),
+	consumedFeedbackIds: jsonb("consumed_feedback_ids").notNull().default(sql`'{}'::jsonb`),
+	previousPromptTemplate: text("previous_prompt_template"),
+	previousOutputSchema: jsonb("previous_output_schema"),
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+	updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+	index("idx_ai_skill_iteration_skill").on(table.skillKey),
+	index("idx_ai_skill_iteration_type").on(table.iterationType),
+	index("idx_ai_skill_iteration_created").on(table.createdAt),
+]);
+
 // table aliases
 export const expenseProfileTable = expenseProfile;
 export const routeProfileTable = routeProfile;
 export const aiModelConfigTable = aiModelConfig;
+export const aiSkillTable = aiSkill;
+export const aiAnalysisSessionTable = aiAnalysisSession;
+export const aiAnalysisConfigTable = aiAnalysisConfig;
+export const aiDesignDocTable = aiDesignDoc;
+export const aiAnalysisFeedbackTable = aiAnalysisFeedback;
+export const aiSkillMetricTable = aiSkillMetric;
+export const aiSkillIterationTable = aiSkillIteration;

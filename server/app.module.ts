@@ -12,6 +12,8 @@ import { ExpenseProfileModule } from './modules/expense-profile/expense-profile.
 import { LocalDatabaseModule } from './modules/local-database/local-database.module';
 import { RuntimeModule } from './modules/runtime/runtime.module';
 import { AiModule } from './modules/ai/ai.module';
+import { AiAnalysisModule } from './modules/ai-analysis/ai-analysis.module';
+import { DocGenModule } from './modules/doc-gen/doc-gen.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { AiModule } from './modules/ai/ai.module';
     RouteProfileModule,
     ExpenseProfileModule,
     AiModule,
+    AiAnalysisModule,
+    DocGenModule,
     // ====== @route-section: business-modules END ======
 
     // ️ @route-order: last

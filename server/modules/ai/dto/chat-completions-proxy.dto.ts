@@ -5,4 +5,5 @@ export interface ChatCompletionsProxyDto {
   messages: Array<{ role: string; content: string }>;
   maxTokens?: number;
   headers?: Record<string, string>;
+  timeoutMs?: number;
 }

@@ -28,16 +28,25 @@ export class AiService {
     }
 
     const startTime = Date.now();
+    const timeoutMs = dto.timeoutMs ?? 60000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${dto.apiKey}`,
-        ...(dto.headers ?? {}),
-      },
-      body: JSON.stringify(body),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${dto.apiKey}`,
+          ...(dto.headers ?? {}),
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const latencyMs = Date.now() - startTime;
 

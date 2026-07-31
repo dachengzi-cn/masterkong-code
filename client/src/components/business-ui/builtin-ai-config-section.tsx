@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Eye, EyeOff, Loader2, RefreshCw } from "lucide-react"
+import { Eye, EyeOff, Loader2, RefreshCw, Zap } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,16 +22,23 @@ import { Label } from "@/components/ui/label"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
-import { Textarea } from "@/components/ui/textarea"
 import * as aiConfigApi from "@/api/ai-config"
 import { aiProviders, getAiProvider } from "@/lib/ai/providers"
 import { cn } from "@/lib/utils"
-import type {
-  AiConnectionStatus,
-  AiModelEntry,
-  AiTestError,
-  AiTestResult,
-} from "@/lib/ai/types"
+import type { AiModelEntry } from "@/lib/ai/types"
+import { ModelStatusIndicator } from "@/components/business-ui/model-status-indicator"
+import {
+  formatBytes,
+  getBatchTestSummary,
+  getLatencyLevel,
+  getLatencyLabel,
+  getStabilityLabel,
+} from "@/lib/ai/model-status"
+import {
+  useTestStore,
+  runBuiltinTest,
+  runBuiltinBatchTest,
+} from "@/lib/ai/test-store"
 
 import {
   Select,
@@ -40,34 +47,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-
-const statusMap: Record<
-  AiConnectionStatus,
-  { label: string; classes: string }
-> = {
-  idle: {
-    label: "待测试",
-    classes: "border-border bg-muted text-muted-foreground",
-  },
-  testing: {
-    label: "测试中...",
-    classes: "border-warning bg-warning/10 text-warning",
-  },
-  success: {
-    label: "连接成功",
-    classes: "border-success bg-success/10 text-success",
-  },
-  error: {
-    label: "连接失败",
-    classes: "border-destructive bg-destructive/10 text-destructive",
-  },
-}
-
-function isAiTestError(
-  result: AiTestResult | AiTestError,
-): result is AiTestError {
-  return result.ok === false
-}
 
 function mapApiItemToModelEntry(item: {
   id: string
@@ -108,13 +87,9 @@ export function BuiltinAiConfigSection() {
   const [model, setModel] = React.useState("")
   const [showApiKey, setShowApiKey] = React.useState(false)
 
-  const [testInput, setTestInput] = React.useState(
-    "你好，请简单回复一句话确认连接正常。",
-  )
-  const [status, setStatus] = React.useState<AiConnectionStatus>("idle")
-  const [testResult, setTestResult] = React.useState<
-    AiTestResult | AiTestError | null
-  >(null)
+  // Subscribe to module-level test store (survives unmount)
+  const testStore = useTestStore()
+  const batchBuiltin = testStore.batch.builtin
 
   const loadConfigs = React.useCallback(async () => {
     setLoading(true)
@@ -142,6 +117,9 @@ export function BuiltinAiConfigSection() {
   }, [loadConfigs])
 
   const selectedModel = items.find((m) => m.id === selectedModelId)
+  const selectedTestResult = selectedModelId
+    ? testStore.results.get(selectedModelId)
+    : undefined
 
   React.useEffect(() => {
     if (selectedModel) {
@@ -153,31 +131,23 @@ export function BuiltinAiConfigSection() {
       setBaseUrl(selectedModel.baseUrl)
       setModel(selectedModel.model)
       setShowApiKey(false)
-      setStatus("idle")
-      setTestResult(null)
     }
   }, [selectedModel])
 
   React.useEffect(() => {
-    if (!saveMessage) {
-      return
-    }
+    if (!saveMessage) return
     const timer = setTimeout(() => setSaveMessage(""), 3000)
     return () => clearTimeout(timer)
   }, [saveMessage])
 
   React.useEffect(() => {
-    if (!errorMessage) {
-      return
-    }
+    if (!errorMessage) return
     const timer = setTimeout(() => setErrorMessage(""), 5000)
     return () => clearTimeout(timer)
   }, [errorMessage])
 
-  const handleSelectModel = async (id: string) => {
+  const handleSelectModel = (id: string) => {
     setSelectedModelId(id)
-    setStatus("idle")
-    setTestResult(null)
   }
 
   const handleSetActive = async () => {
@@ -219,82 +189,68 @@ export function BuiltinAiConfigSection() {
     }
   }
 
-  const handleTest = async () => {
+  const handleTest = () => {
     if (!selectedModel) return
-
-    setStatus("testing")
-    setTestResult(null)
-    setSaveMessage("")
-
-    try {
-      const response = await aiConfigApi.testAiModelConfig(selectedModel.id, {
-        messages: [{ role: "user", content: testInput }],
-        maxTokens: 100,
-      })
-
-      if (response.ok) {
-        setStatus("success")
-        setTestResult({
-          ok: true,
-          content: response.content ?? "",
-          metrics: {
-            latencyMs: response.metrics?.latencyMs ?? 0,
-            statusCode: response.metrics?.statusCode ?? 0,
-            usage: response.metrics?.usage
-              ? {
-                  promptTokens: response.metrics.usage.promptTokens,
-                  completionTokens: response.metrics.usage.completionTokens,
-                  totalTokens: response.metrics.usage.totalTokens,
-                }
-              : undefined,
-          },
-          raw: response,
-        })
-      } else {
-        setStatus("error")
-        setTestResult({
-          ok: false,
-          error: response.error ?? "连接失败",
-          metrics: response.metrics
-            ? {
-                latencyMs: response.metrics.latencyMs,
-                statusCode: response.metrics.statusCode,
-              }
-            : undefined,
-          raw: response,
-        })
-      }
-    } catch (error) {
-      setStatus("error")
-      setTestResult({
-        ok: false,
-        error: error instanceof Error ? error.message : "连接测试失败",
-      })
-    }
+    // Fire and forget — module store handles the rest
+    runBuiltinTest(selectedModel.id)
   }
 
-  const statusInfo = statusMap[status]
+  const handleBatchTest = () => {
+    if (items.length === 0 || batchBuiltin.testing) return
+    const keys = items.map((m) => m.id)
+    // Fire and forget — module store tracks progress and results
+    runBuiltinBatchTest(keys)
+  }
+
+  const batchSummary = React.useMemo(() => {
+    // Only count results for builtin model IDs
+    const builtinIds = new Set(items.map((m) => m.id))
+    const results = Array.from(testStore.results.values()).filter((r) =>
+      builtinIds.has(r.configKey),
+    )
+    if (results.length === 0) return null
+    return getBatchTestSummary(results)
+  }, [testStore.results, items])
 
   return (
     <section className="space-y-4">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label className="text-xs text-muted-foreground">已配置模型</Label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 rounded-full px-2 text-xs"
-            onClick={loadConfigs}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="mr-1 size-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-1 size-3.5" />
-            )}
-            刷新
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-full px-2 text-xs"
+              onClick={handleBatchTest}
+              disabled={batchBuiltin.testing || items.length === 0}
+            >
+              {batchBuiltin.testing ? (
+                <Loader2 className="mr-1 size-3.5 animate-spin" />
+              ) : (
+                <Zap className="mr-1 size-3.5" />
+              )}
+              {batchBuiltin.testing
+                ? `全部测试 (${batchBuiltin.current}/${batchBuiltin.total})`
+                : '全部链接测试'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-full px-2 text-xs"
+              onClick={loadConfigs}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="mr-1 size-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1 size-3.5" />
+              )}
+              刷新
+            </Button>
+          </div>
         </div>
 
         <ScrollArea className="w-full whitespace-nowrap">
@@ -307,6 +263,7 @@ export function BuiltinAiConfigSection() {
               items.map((item) => {
                 const provider = getAiProvider(item.providerId)
                 const isActive = item.id === selectedModelId
+                const itemTestResult = testStore.results.get(item.id)
                 return (
                   <button
                     key={item.id}
@@ -319,8 +276,11 @@ export function BuiltinAiConfigSection() {
                         : "border-border bg-card hover:border-primary hover:bg-accent",
                     )}
                   >
-                    <span className="truncate text-sm font-medium">
-                      {item.name}
+                    <span className="flex w-full items-center gap-1.5">
+                      <ModelStatusIndicator result={itemTestResult} />
+                      <span className="truncate text-sm font-medium">
+                        {item.name}
+                      </span>
                     </span>
                     <span className="flex items-center gap-2">
                       <Badge
@@ -346,6 +306,28 @@ export function BuiltinAiConfigSection() {
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
       </div>
+
+      {/* Batch test summary */}
+      {batchSummary && batchSummary.total > 0 && (
+        <div className="grid grid-cols-4 gap-2 rounded-sm border border-border bg-muted/30 p-3">
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">测试数</p>
+            <p className="text-sm font-medium font-mono tabular-nums">{batchSummary.total}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">成功</p>
+            <p className="text-sm font-medium font-mono tabular-nums text-[hsl(152,60%,42%)]">{batchSummary.success}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">失败</p>
+            <p className="text-sm font-medium font-mono tabular-nums text-[hsl(4,72%,52%)]">{batchSummary.failed}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">平均延迟</p>
+            <p className="text-sm font-medium font-mono tabular-nums">{batchSummary.avgLatency}ms</p>
+          </div>
+        </div>
+      )}
 
       {errorMessage && (
         <div className="rounded-sm border border-destructive bg-destructive/10 p-3 text-xs text-destructive">
@@ -476,87 +458,68 @@ export function BuiltinAiConfigSection() {
               <CardTitle className="text-sm font-medium">连接测试</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 p-4 pt-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">状态</span>
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
-                    statusInfo.classes,
-                  )}
-                >
-                  {status === "testing" && <Spinner className="mr-1 size-3" />}
-                  {statusInfo.label}
-                </span>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">测试内容</Label>
-                <Textarea
-                  value={testInput}
-                  onChange={(event) => setTestInput(event.target.value)}
-                  placeholder="输入测试内容"
-                  className="min-h-[80px] rounded-sm"
-                />
-              </div>
-
               <Button
                 type="button"
                 onClick={handleTest}
-                disabled={status === "testing"}
+                disabled={selectedTestResult?.status === 'testing'}
                 className="rounded-full"
               >
-                {status === "testing" && <Spinner className="mr-1 size-4" />}
+                {selectedTestResult?.status === 'testing' && <Spinner className="mr-1 size-4" />}
                 测试连接
               </Button>
 
-              {testResult && (
-                <div
-                  className={cn(
-                    "space-y-2 rounded-sm border p-3 text-sm",
-                    testResult.ok
-                      ? "border-success bg-success/10 text-success"
-                      : "border-destructive bg-destructive/10 text-destructive",
-                  )}
-                >
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                    {testResult.metrics && (
-                      <>
-                        <span>
-                          响应延迟：
-                          <strong>{testResult.metrics.latencyMs}ms</strong>
-                        </span>
-                        <span>
-                          HTTP 状态：
-                          <strong>{testResult.metrics.statusCode}</strong>
-                        </span>
-                        {testResult.ok && testResult.metrics.usage && (
-                          <span>
-                            Token：
-                            <strong>
-                              {testResult.metrics.usage.totalTokens ?? "-"}
-                            </strong>
-                          </span>
-                        )}
-                      </>
-                    )}
+              {selectedTestResult && selectedTestResult.status !== 'testing' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-sm border border-border bg-muted/30 p-2">
+                      <p className="text-[10px] text-muted-foreground">网络延迟</p>
+                      <p className="text-sm font-medium font-mono tabular-nums">
+                        {selectedTestResult.latencyMs !== undefined
+                          ? `${selectedTestResult.latencyMs}ms`
+                          : '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-sm border border-border bg-muted/30 p-2">
+                      <p className="text-[10px] text-muted-foreground">HTTP 状态码</p>
+                      <p className="text-sm font-medium font-mono tabular-nums">
+                        {selectedTestResult.statusCode ?? '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-sm border border-border bg-muted/30 p-2">
+                      <p className="text-[10px] text-muted-foreground">数据包大小</p>
+                      <p className="text-sm font-medium font-mono tabular-nums">
+                        {selectedTestResult.contentLength !== undefined
+                          ? formatBytes(selectedTestResult.contentLength)
+                          : '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-sm border border-border bg-muted/30 p-2">
+                      <p className="text-[10px] text-muted-foreground">连接稳定性</p>
+                      <p className="text-sm font-medium">
+                        {selectedTestResult.status === 'error'
+                          ? '不可用'
+                          : getStabilityLabel(selectedTestResult.latencyMs)}
+                      </p>
+                    </div>
                   </div>
-                  <Separator
-                    className={cn(
-                      "my-2",
-                      testResult.ok
-                        ? "bg-success/30"
-                        : "bg-destructive/30",
+
+                  <div className="flex items-center gap-2 rounded-sm border border-border p-2">
+                    <span className="text-[10px] text-muted-foreground">延迟评级</span>
+                    {selectedTestResult.status === 'error' ? (
+                      <span className="text-xs font-medium text-muted-foreground">连接失败</span>
+                    ) : (
+                      <span className="text-xs font-medium">
+                        {getLatencyLabel(getLatencyLevel(selectedTestResult.latencyMs))}
+                      </span>
                     )}
-                  />
-                  {testResult.ok ? (
-                    <p className="whitespace-pre-wrap break-words">
-                      {testResult.content}
-                    </p>
-                  ) : isAiTestError(testResult) ? (
-                    <p className="whitespace-pre-wrap break-words">
-                      {testResult.error}
-                    </p>
-                  ) : null}
+                    <ModelStatusIndicator result={selectedTestResult} size="md" className="ml-auto" />
+                  </div>
+
+                  {selectedTestResult.status === 'error' && selectedTestResult.errorMessage && (
+                    <div className="rounded-sm border border-destructive bg-destructive/10 p-2 text-xs text-destructive">
+                      {selectedTestResult.errorMessage}
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
