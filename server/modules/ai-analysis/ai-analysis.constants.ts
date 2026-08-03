@@ -10,7 +10,7 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
     skillKey: 'cumulative-conversion-analysis',
     name: '累计成交分析',
     description: '分析累计成交率趋势、业代排名、未成交门店与异常波动',
-    pageScope: 'cumulative',
+    pageScope: 'dashboard/cumulative',
     promptTemplate: `你是一位专业的快消品数据分析专家。请基于以下累计成交分析数据，进行深度洞察。
 
 ## 分析任务
@@ -57,7 +57,7 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
     skillKey: 'daily-conversion-analysis',
     name: '当日成交分析',
     description: '分析每日成交率波动、周末效应与最佳/最差营业日',
-    pageScope: 'daily',
+    pageScope: 'dashboard/daily',
     promptTemplate: `你是一位专业的快消品数据分析专家。请基于以下当日成交分析数据，进行深度洞察。
 
 ## 分析任务
@@ -106,7 +106,7 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
     skillKey: 'brand-spec-analysis',
     name: '品牌规格分析',
     description: '分析品牌与规格的成交覆盖、组合优化与机会品类',
-    pageScope: 'brand-spec',
+    pageScope: 'dashboard/brand-spec',
     promptTemplate: `你是一位专业的快消品品类管理专家。请基于以下品牌 & 规格成交分析数据，进行深度洞察。
 
 ## 分析任务
@@ -153,7 +153,7 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
     skillKey: 'expiry-expense-analysis',
     name: '临期费用分析',
     description: '分析临期费用金额趋势、区域分布、规格集中度与风险预警',
-    pageScope: 'expiry',
+    pageScope: 'expense/expiry',
     promptTemplate: `你是一位专业的快消品费用管理专家。请基于以下临期费用分析数据，进行深度洞察。
 
 ## 分析任务
@@ -201,7 +201,7 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
     skillKey: 'atp-expense-analysis',
     name: 'ATP费用分析',
     description: '分析ATP投入费比、付费点销额占比与业代绩效分布',
-    pageScope: 'atp',
+    pageScope: 'expense/atp',
     promptTemplate: `你是一位专业的快消品通路营销费用管理专家。请基于以下ATP费用绩效分析数据，进行深度洞察。
 
 ## 分析任务
