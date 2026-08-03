@@ -2,6 +2,16 @@ import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '@/components/ui/empty';
 import { datasetApi } from '@client/src/api/index';
 import { logger } from '@lark-apaas/client-toolkit/logger';
@@ -16,6 +26,7 @@ import type {
   SalesRepDrilldownResponse,
 } from '@shared/api.interface';
 import DrilldownRow from './DrilldownRow';
+import { extractChineseName } from './tableFormat';
 
 type CellStyle = Record<string, unknown>;
 
@@ -25,18 +36,12 @@ interface SalesRepHeatmapProps {
   dateFrom: string;
   dateTo: string;
   granularity: TimeGranularity;
+  committedGranularity?: TimeGranularity | null;
   onGranularityChange: (g: TimeGranularity) => void;
+  onCommittedGranularityChange?: (g: TimeGranularity) => void;
   onLoadingChange?: (loading: boolean) => void;
   onDataChange?: (data: HeatmapResponse | null) => void;
 }
-
-const FIXED_COLS = [
-  { key: 'region', label: '所别', width: 90 },
-  { key: 'tier', label: '阶层', width: 56 },
-  { key: 'salesRep', label: '业代', width: 130 },
-  { key: 'servicePoints', label: '点数', width: 56 },
-  { key: 'totalOrders', label: '合计箱数', width: 70 },
-] as const;
 
 const GRANULARITY_OPTIONS: Array<{ value: TimeGranularity; label: string }> = [
   { value: 'day', label: '日' },
@@ -193,6 +198,7 @@ const HeatmapRowComponent = memo(({
   row,
   rowIndex,
   columns,
+  fixedCols,
   colWidth,
   granularity,
   fixedLeft,
@@ -204,6 +210,7 @@ const HeatmapRowComponent = memo(({
   row: HeatmapRow;
   rowIndex: number;
   columns: HeatmapColumnHeader[];
+  fixedCols: Array<{ key: string; label: string; width: number }>;
   colWidth: number;
   granularity: TimeGranularity;
   fixedLeft: number[];
@@ -218,19 +225,19 @@ const HeatmapRowComponent = memo(({
 
   return (
     <React.Fragment key={rowKey}>
-      <tr className={`transition-colors duration-150 ease-out ${isTotalRow ? 'font-semibold' : 'hover:bg-accent/20'}`}>
-        {FIXED_COLS.map((col, ci) => {
+      <tr className={`transition-colors duration-150 ease-out ${isTotalRow ? '!font-bold' : 'hover:bg-accent/10'}`}>
+        {fixedCols.map((col, ci) => {
           if (col.key === 'salesRep') {
             return (
               <td
                 key={col.key}
-                className={`border-b border-r border-border px-2 py-1.5 text-foreground truncate select-none ${isTotalRow ? '' : 'cursor-pointer'}`}
+                className={`border-b border-r border-border px-3 py-2 text-foreground whitespace-nowrap select-none ${isTotalRow ? '' : 'cursor-pointer'}`}
                 style={{
                   width: col.width, minWidth: col.width, maxWidth: col.width,
                   position: 'sticky', left: fixedLeft[ci], zIndex: 11,
                   backgroundColor: fixedBg,
                 }}
-                title={row.salesRep}
+                title={extractChineseName(row.salesRep)}
                 onClick={isTotalRow ? undefined : onToggle}
               >
                 <span className="inline-flex items-center gap-1">
@@ -239,7 +246,7 @@ const HeatmapRowComponent = memo(({
                       className={`inline-flex items-center justify-center text-base leading-none shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                     >▼</span>
                   )}
-                  <span className="truncate">{row.salesRep}</span>
+                  <span className="whitespace-nowrap">{extractChineseName(row.salesRep)}</span>
                 </span>
               </td>
             );
@@ -247,7 +254,13 @@ const HeatmapRowComponent = memo(({
           return (
             <td
               key={col.key}
-              className={`border-b border-r border-border px-2 py-1.5 text-foreground truncate ${(col.key === 'servicePoints' || col.key === 'totalOrders') ? 'font-mono tabular-nums' : ''}`}
+              className={`border-b border-r border-border py-2 text-foreground ${
+                (col.key === 'servicePoints' || col.key === 'totalOrders')
+                  ? 'px-2 font-mono tabular-nums text-right whitespace-nowrap'
+                  : col.key === 'region'
+                    ? 'px-3 text-left whitespace-nowrap'
+                    : 'px-3 text-left whitespace-nowrap'
+              }`}
               style={{
                 width: col.width, minWidth: col.width, maxWidth: col.width,
                 position: 'sticky', left: fixedLeft[ci], zIndex: 11,
@@ -265,7 +278,7 @@ const HeatmapRowComponent = memo(({
             return (
               <td
                 key={col.index}
-                className="border-b border-r border-border px-0.5 py-1.5 text-center"
+                className="border-b border-r border-border px-1 py-2 text-center"
                 style={{ width: colWidth, minWidth: colWidth, backgroundColor: 'hsl(220, 10%, 95%)', color: 'hsl(220, 10%, 65%)' }}
               >
                 休
@@ -276,7 +289,7 @@ const HeatmapRowComponent = memo(({
           return (
             <td
               key={col.index}
-              className="border-b border-r border-border px-0.5 py-1.5 text-center font-mono tabular-nums"
+              className="border-b border-r border-border px-1 py-2 text-center font-mono tabular-nums"
               style={{
                 width: colWidth, minWidth: colWidth,
                 backgroundColor: getRateBg(dd?.rate ?? null),
@@ -296,21 +309,28 @@ const HeatmapRowComponent = memo(({
 HeatmapRowComponent.displayName = 'HeatmapRowComponent';
 
 const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
-  datasetId, filters, dateFrom, dateTo, granularity, onGranularityChange, onLoadingChange, onDataChange,
+  datasetId, filters, dateFrom, dateTo, granularity, committedGranularity, onGranularityChange, onCommittedGranularityChange, onLoadingChange, onDataChange,
 }) => {
   const [data, setData] = useState<HeatmapResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportRate, setExportRate] = useState(true);
+  const [exportDrilldown, setExportDrilldown] = useState(false);
   const [collapseLevel, setCollapseLevel] = useState<'none' | 'region' | 'tier'>('region');
+
+  // 实际请求时使用的 granularity：已确认查询前跟随草稿值，确认后跟随 committedGranularity
+  // 保证切换日/周/月/年能立刻触发数据请求
+  const effectiveGranularity = committedGranularity ?? granularity;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     setExpandedRow(null);
     try {
-      const result = await datasetApi.getHeatmapData(datasetId, dateFrom, dateTo, granularity, filters);
+      const result = await datasetApi.getHeatmapData(datasetId, dateFrom, dateTo, effectiveGranularity, filters);
       setData(result);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -320,7 +340,7 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
       setLoading(false);
       setCollapseLevel('region');
     }
-  }, [datasetId, dateFrom, dateTo, granularity, filters]);
+  }, [datasetId, dateFrom, dateTo, effectiveGranularity, filters]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -336,7 +356,26 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
 
   const rows = data?.rows ?? [];
   const columns = data?.columns ?? [];
-  const colWidth = granularity === 'day' ? 40 : granularity === 'week' ? 56 : 60;
+  const colWidth = effectiveGranularity === 'day' ? 48 : effectiveGranularity === 'week' ? 64 : 72;
+
+  // 所别列宽精确贴合最宽所名（含合计行的"XX所合计"），保证所有所名单行完整、列宽与所名一致
+  const regionColWidth = useMemo(() => {
+    let maxLen = 0;
+    for (const r of rows) {
+      const len = (r.region || '').length;
+      if (len > maxLen) maxLen = len;
+    }
+    // 汉字约 13px/字，内边距 px-3 = 24px，加 4px 余量避免截断
+    return Math.max(64, maxLen * 13 + 28);
+  }, [rows]);
+
+  const fixedCols = useMemo(() => [
+    { key: 'region', label: '所别', width: regionColWidth },
+    { key: 'tier', label: '阶层', width: 64 },
+    { key: 'salesRep', label: '业代', width: 100 },
+    { key: 'servicePoints', label: '点数', width: 56 },
+    { key: 'totalOrders', label: '合计箱数', width: 70 },
+  ], [regionColWidth]);
 
   // 生成带合计行的展示数据
   const isDailyMode = filters.mode === 'daily';
@@ -355,9 +394,9 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
   }, [displayRows, collapseLevel]);
 
   const timeLabel = data
-    ? granularity === 'month'
+    ? effectiveGranularity === 'month'
       ? `${data.year}年`
-      : granularity === 'year'
+      : effectiveGranularity === 'year'
         ? '全部年份'
         : dateFrom === dateTo
           ? dateFrom.replace(/-/g, '/')
@@ -384,15 +423,15 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
     return thresholds;
   }, [rows, columns]);
 
-  const fixedLeft = useMemo(() => FIXED_COLS.reduce<number[]>((acc, col, i) => {
-    acc.push(i === 0 ? 0 : acc[i - 1] + FIXED_COLS[i - 1].width);
+  const fixedLeft = useMemo(() => fixedCols.reduce<number[]>((acc, col, i) => {
+    acc.push(i === 0 ? 0 : acc[i - 1] + fixedCols[i - 1].width);
     return acc;
-  }, []), []);
+  }, []), [fixedCols]);
 
-  const totalFixedWidth = useMemo(() => FIXED_COLS.reduce((sum, c) => sum + c.width, 0), []);
+  const totalFixedWidth = useMemo(() => fixedCols.reduce((sum, c) => sum + c.width, 0), [fixedCols]);
 
   // Lazy load xlsx only when exporting
-  const handleExportHeatmap = useCallback(async () => {
+  const handleExportHeatmap = useCallback(async (exportRate: boolean, exportDrilldown: boolean) => {
     if (!rows.length || exporting) return;
     setExporting(true);
 
@@ -400,7 +439,9 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
       // Dynamic import for code splitting
       const XLSX = await import('xlsx-js-style').then(m => m.default || m);
 
-      const ws = XLSX.utils.aoa_to_sheet([]);
+      const wb = XLSX.utils.book_new();
+
+      // 通用样式定义（导出成交率和下钻数据都需要）
       const headerStyle: CellStyle = {
         fill: { fgColor: { rgb: hslToHex(217, 40, 95) } },
         font: { bold: true, sz: 10, color: { rgb: '1A2433' } },
@@ -422,6 +463,10 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
           right: { style: 'thin', color: { rgb: 'D0D5DD' } },
         },
       };
+
+      // 导出业代累计成交率 Sheet
+      if (exportRate) {
+        const ws = XLSX.utils.aoa_to_sheet([]);
       const colLabels = columns.map((c: HeatmapColumnHeader) => c.label);
       const headers = ['所别', '阶层', '业代', '点数', '合计箱数', ...colLabels];
       XLSX.utils.sheet_add_aoa(ws, [headers], { origin: 'A1' });
@@ -448,7 +493,7 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
         columns.forEach((col: HeatmapColumnHeader, ci: number) => {
           const dd = row.dailyData?.[ci];
           const ref = XLSX.utils.encode_cell({ r: ri + 1, c: 5 + ci });
-          if (col.isHoliday && granularity === 'day') {
+          if (col.isHoliday && effectiveGranularity === 'day') {
             const hs = rateCellStyle(null, false);
             if (isTotalRow) {
               const f = hs.font as Record<string, unknown> | undefined;
@@ -477,11 +522,11 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
       ];
       ws['!cols'] = colWidths;
       ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: displayRows.length, c: headers.length - 1 } });
-      const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, '业代成交率');
+      } // end exportRate
 
-      // 累计模式：新增"下钻数据"Sheet，形态/品牌/规格横向交叉表展示
-      if (!isDailyMode) {
+      // 累计模式且用户选择了下钻数据：新增"下钻数据"Sheet，形态/品牌/规格横向交叉表展示
+      if (exportDrilldown && !isDailyMode) {
         const dataRows = rows.filter((r) => !r.rowType || r.rowType === 'data');
         if (dataRows.length > 0) {
           // 批量获取所有业代的下钻数据（每批 10 个并发）
@@ -645,11 +690,10 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
       }
 
       XLSX.writeFile(wb, `${filters.mode === 'daily' ? '业代当日成交率' : '业代累计成交率'}_${timeLabel}.xlsx`);
-      const drillCount = !isDailyMode ? rows.filter((r) => !r.rowType || r.rowType === 'data').length : 0;
-      toast.success(
-        `已导出 ${displayRows.length} 条${filters.mode === 'daily' ? '当日' : '累计'}成交率数据` +
-        (drillCount > 0 ? `，含 ${drillCount} 名业代下钻数据` : ''),
-      );
+      const parts: string[] = [];
+      if (exportRate) parts.push(`${displayRows.length} 条${filters.mode === 'daily' ? '当日' : '累计'}成交率数据`);
+      if (exportDrilldown) parts.push(`业代下钻数据`);
+      toast.success(`已导出：${parts.join('、')}`);
     } catch (err) {
       logger.error('Failed to export heatmap:', err);
       toast.error('导出失败，请重试');
@@ -659,7 +703,7 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
   }, [displayRows, columns, granularity, bottom30ByPeriod, timeLabel, exporting, filters.mode, rows, datasetId, dateFrom, dateTo, isDailyMode]);
 
   return (
-    <div className="bg-card border border-border rounded-sm">
+    <div className="bg-card border border-border rounded-sm overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-bold text-foreground">{filters.mode === 'daily' ? '业代当日成交率' : '业代累计成交率'}</h3>
@@ -669,8 +713,13 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
                 key={opt.value}
                 variant="ghost"
                 size="sm"
-                className={`h-6 px-2 text-xs ${granularity === opt.value ? 'bg-primary/10 text-primary font-medium' : ''}`}
-                onClick={() => onGranularityChange(opt.value)}
+                className={`h-6 px-2 text-xs ${effectiveGranularity === opt.value ? 'bg-primary/10 text-primary font-medium' : ''}`}
+                onClick={() => {
+                  onGranularityChange(opt.value);
+                  if (committedGranularity != null) {
+                    onCommittedGranularityChange?.(opt.value);
+                  }
+                }}
               >
                 {opt.label}
               </Button>
@@ -680,16 +729,23 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-foreground">{timeLabel}</span>
         </div>
-        <Button size="sm" onClick={handleExportHeatmap} disabled={loading || rows.length === 0 || exporting} className="gap-1">
-          <span className="inline-flex items-center justify-center text-base leading-none" >⬇️</span>
-          {exporting ? '导出中...' : '导出成交率'}
+        <Button size="sm" onClick={() => setExportOpen(true)} disabled={loading || rows.length === 0} className="gap-1">
+          <span className="inline-flex items-center justify-center text-base leading-none">⬇️</span>
+          导出成交率
         </Button>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">加载中...</div>
+        <div className="bg-card border border-border rounded-sm p-5 space-y-2">
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-2/3" />
+        </div>
       ) : error ? (
-        <div className="flex items-center justify-center py-12">
+        <div className="flex items-center justify-center min-h-[300px] bg-card border border-border rounded-sm">
           <Empty className="border-none">
             <EmptyHeader>
               <EmptyMedia variant="emoji">⚠️</EmptyMedia>
@@ -704,7 +760,7 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
           </Empty>
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex items-center justify-center py-12">
+        <div className="flex items-center justify-center min-h-[300px] bg-card border border-border rounded-sm">
           <Empty className="border-none">
             <EmptyHeader>
               <EmptyMedia variant="emoji">📊</EmptyMedia>
@@ -738,10 +794,10 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
             </div>
           </div>
           <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 260px)' }}>
-            <table className="w-full border-collapse text-xs" style={{ minWidth: totalFixedWidth + columns.length * colWidth }}>
+            <table className="w-full border-collapse text-xs" style={{ minWidth: totalFixedWidth + columns.length * colWidth, tableLayout: 'fixed' }}>
               <thead>
                 <tr style={{ backgroundColor: 'hsl(217, 40%, 95%)' }}>
-                  {FIXED_COLS.map((col, ci) => {
+                  {fixedCols.map((col, ci) => {
                     const isRegion = col.key === 'region';
                     const isTier = col.key === 'tier';
                     const clickable = isRegion || isTier;
@@ -749,7 +805,9 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
                     return (
                       <th
                         key={col.key}
-                        className={`border-b border-r border-border px-2 py-2 text-left font-medium text-foreground ${clickable ? 'cursor-pointer select-none' : ''}`}
+                        className={`border-b border-r border-border px-3 py-2 !font-bold text-black text-center ${
+                          clickable ? 'cursor-pointer select-none' : ''
+                        }`}
                         style={{
                           width: col.width, minWidth: col.width,
                           position: 'sticky', left: fixedLeft[ci], top: 0, zIndex: 12,
@@ -803,10 +861,10 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
                   {columns.map((col) => (
                     <th
                       key={col.index}
-                      className="border-b border-r border-border px-0.5 py-1.5 text-center font-medium"
+                      className="border-b border-r border-border px-1 py-2 text-center !font-bold text-black"
                       style={{
                         width: colWidth, minWidth: colWidth,
-                        color: col.isHoliday ? 'hsl(4, 72%, 52%)' : 'hsl(220, 25%, 12%)',
+                        color: col.isHoliday ? 'hsl(4, 72%, 52%)' : undefined,
                         backgroundColor: col.isHoliday ? 'hsl(0, 60%, 97%)' : 'hsl(217, 40%, 95%)',
                         position: 'sticky', top: 0, zIndex: 10,
                       }}
@@ -830,8 +888,9 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
                         row={row}
                         rowIndex={ri}
                         columns={columns}
+                        fixedCols={fixedCols}
                         colWidth={colWidth}
-                        granularity={granularity}
+                        granularity={effectiveGranularity}
                         fixedLeft={fixedLeft}
                         bottom30ByPeriod={bottom30ByPeriod}
                         isExpanded={isExpanded}
@@ -859,6 +918,59 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
           </div>
         </>
       )}
+
+      {/* 导出选择对话框 */}
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>选择导出内容</DialogTitle>
+            <DialogDescription>
+              请选择需要导出的数据项，可多选。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-3">
+            <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer hover:bg-accent/50 transition-colors duration-150">
+              <Checkbox
+                checked={exportRate}
+                onCheckedChange={(checked) => setExportRate(checked as boolean)}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-foreground">业代累计成交率</p>
+                <p className="text-xs text-muted-foreground mt-0.5">包含所有业代的成交率汇总数据</p>
+              </div>
+            </label>
+            <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer hover:bg-accent/50 transition-colors duration-150">
+              <Checkbox
+                checked={exportDrilldown}
+                onCheckedChange={(checked) => setExportDrilldown(checked as boolean)}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-foreground">业代下钻数据</p>
+                <p className="text-xs text-muted-foreground mt-0.5">包含形态/品牌/规格的横向交叉表明细</p>
+              </div>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setExportOpen(false)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setExportOpen(false);
+                if (exportRate || exportDrilldown) {
+                  handleExportHeatmap(exportRate, exportDrilldown);
+                }
+              }}
+              disabled={!exportRate && !exportDrilldown}
+            >
+              确认导出
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -9,6 +9,15 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { KpiCard } from '@/components/business-ui/kpi-card';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '@/components/ui/empty';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { datasetApi } from '@client/src/api/index';
@@ -367,11 +376,26 @@ const DashboardOverviewPage: React.FC = () => {
   const [resolving, setResolving] = useState(true);
 
   const now = new Date();
-  const defaultDateRange: DateRangeValue = {
-    from: new Date(now.getFullYear(), now.getMonth(), 1),
-    to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
-  };
-  const [dateRange] = useState<DateRangeValue>(defaultDateRange);
+  const defaultYear = now.getFullYear();
+  const defaultMonth = now.getMonth() + 1;
+
+  // 生成可选择的年份范围（过去 3 年到未来 1 年）
+  const yearOptions = Array.from({ length: 5 }, (_, i) => defaultYear - 2 + i);
+  const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1);
+
+  const [selectYear, setSelectYear] = useState<string>(String(defaultYear));
+  const [selectMonth, setSelectMonth] = useState<string>(String(defaultMonth));
+
+  // 根据年月选择计算日期范围
+  const dateRange = useMemo(() => {
+    const y = parseInt(selectYear, 10);
+    const m = parseInt(selectMonth, 10);
+    return {
+      from: new Date(y, m - 1, 1),
+      to: new Date(y, m, 0),
+    };
+  }, [selectYear, selectMonth]);
+
   const dateFrom = formatDateStr(dateRange.from);
   const dateTo = formatDateStr(dateRange.to);
 
@@ -450,9 +474,83 @@ const DashboardOverviewPage: React.FC = () => {
         <div>
           <h2 className="text-lg font-semibold text-foreground">成交分析总览</h2>
           <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-            <span className="inline-flex items-center justify-center text-base leading-none" >📅</span>
+            <span className="inline-flex items-center justify-center text-base leading-none">📅</span>
             {dateLabel}
           </p>
+        </div>
+        {/* 统一年月选择器 */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground shrink-0">年月</span>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-[140px] rounded-full gap-1 text-xs font-normal font-mono tabular-nums hover:bg-[hsl(152,60%,42%)] hover:text-white hover:border-[hsl(152,60%,42%)]"
+              >
+                {selectYear}年{String(selectMonth).padStart(2, '0')}月
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-3" align="end">
+              <div className="flex items-center gap-2">
+                {/* 快速切换：上月 */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => {
+                    const y = parseInt(selectYear, 10);
+                    const m = parseInt(selectMonth, 10);
+                    const prev = new Date(y, m - 2, 1);
+                    setSelectYear(String(prev.getFullYear()));
+                    setSelectMonth(String(prev.getMonth() + 1));
+                  }}
+                >
+                  <ChevronLeft className="size-3.5" />
+                </Button>
+
+                {/* 年份选择 */}
+                <Select value={selectYear} onValueChange={setSelectYear}>
+                  <SelectTrigger className="h-7 w-[96px] text-xs font-mono tabular-nums">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yearOptions.map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}年</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* 月份选择 */}
+                <Select value={selectMonth} onValueChange={setSelectMonth}>
+                  <SelectTrigger className="h-7 w-[64px] text-xs font-mono tabular-nums">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((m) => (
+                      <SelectItem key={m} value={String(m)}>{String(m).padStart(2, '0')}月</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* 快速切换：下月 */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => {
+                    const y = parseInt(selectYear, 10);
+                    const m = parseInt(selectMonth, 10);
+                    const next = new Date(y, m, 1);
+                    setSelectYear(String(next.getFullYear()));
+                    setSelectMonth(String(next.getMonth() + 1));
+                  }}
+                >
+                  <ChevronRight className="size-3.5" />
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 

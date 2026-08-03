@@ -27,7 +27,7 @@ import {
   readCache,
   deleteVersionCache,
   type CachedVersionEntry,
-} from './version-cache';
+} from '@/lib/version-cache';
 
 const PAGE_SCOPE_LABELS: Record<string, string> = {
   customers: '客户总览',
@@ -38,7 +38,7 @@ const PAGE_SCOPE_LABELS: Record<string, string> = {
   'dashboard/brand-spec': '品牌规格分析',
   'expense/expiry': '临期费用分析',
   'expense/atp': 'ATP费用分析',
-  'expense/overstock': '压货分析',
+  'expense/overstock': '差异门店分析',
   global: '通用',
 };
 
@@ -51,7 +51,7 @@ type SkillSnapshot = {
   version: number;
 };
 
-export const AiSkillsPanel: React.FC = () => {
+export const AiSkillsSection: React.FC = () => {
   const [skills, setSkills] = useState<AiSkillItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSkill, setSelectedSkill] = useState<AiSkillItem | null>(null);
@@ -83,7 +83,7 @@ export const AiSkillsPanel: React.FC = () => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : '加载技能列表失败';
       setError(msg);
-      logger.error('[AiSkillsPanel] loadSkills error:', err);
+      logger.error('[AiSkillsSection] loadSkills error:', err);
     } finally {
       setLoading(false);
     }
@@ -162,7 +162,7 @@ export const AiSkillsPanel: React.FC = () => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : '保存失败';
       setError(msg);
-      logger.error('[AiSkillsPanel] save error:', err);
+      logger.error('[AiSkillsSection] save error:', err);
     } finally {
       setSaving(false);
     }
@@ -206,14 +206,14 @@ export const AiSkillsPanel: React.FC = () => {
   }, [skills]);
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 sm:px-6 py-4 sm:py-6">
-      {/* 页头 */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-6">
-        <div className="flex items-center gap-3 min-w-0">
-          <Wand2 className="size-6 text-primary shrink-0" />
+    <div className="space-y-4">
+      {/* 分区标题 */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Wand2 className="size-5 text-primary shrink-0" />
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">AI 分析技能</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <h3 className="text-base font-semibold tracking-tight">AI 分析技能</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
               查看 · 修改 · 优化分析技能 · 版本存档管理
             </p>
           </div>
@@ -224,7 +224,7 @@ export const AiSkillsPanel: React.FC = () => {
       </div>
 
       {error && (
-        <div className="mb-4 flex items-center gap-2 rounded-sm border border-error/30 bg-error/5 p-3 text-sm text-error">
+        <div className="flex items-center gap-2 rounded-sm border border-error/30 bg-error/5 p-3 text-sm text-error">
           <AlertTriangle className="size-4 shrink-0" />
           <span>{error}</span>
           <button onClick={() => setError(null)} className="ml-auto text-error/60 hover:text-error">
@@ -234,7 +234,7 @@ export const AiSkillsPanel: React.FC = () => {
       )}
 
       {successMsg && (
-        <div className="mb-4 flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 p-3 text-sm text-success">
+        <div className="flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 p-3 text-sm text-success">
           <Zap className="size-4 shrink-0" />
           <span>{successMsg}</span>
           <button onClick={() => setSuccessMsg(null)} className="ml-auto text-success/60 hover:text-success">
@@ -243,9 +243,9 @@ export const AiSkillsPanel: React.FC = () => {
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6" style={{ minHeight: 'calc(100vh - 200px)' }}>
+      <div className="flex flex-col lg:flex-row gap-4">
         {/* 左侧技能列表 */}
-        <div className="w-full lg:w-72 lg:shrink-0 space-y-3 max-h-[300px] lg:max-h-none overflow-y-auto lg:overflow-visible">
+        <div className="w-full lg:w-64 lg:shrink-0 space-y-3 max-h-[260px] lg:max-h-[560px] overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground">
               <Loader2 className="size-5 animate-spin" />
@@ -262,9 +262,9 @@ export const AiSkillsPanel: React.FC = () => {
           ) : (
             Object.entries(skillsByPage).map(([pageScope, pageSkills]) => (
               <div key={pageScope}>
-                <h3 className="text-xs font-medium text-muted-foreground mb-1.5 px-1">
+                <h4 className="text-xs font-medium text-muted-foreground mb-1.5 px-1">
                   {PAGE_SCOPE_LABELS[pageScope] ?? pageScope}
-                </h3>
+                </h4>
                 <div className="space-y-1">
                   {pageSkills.map((skill) => {
                     const cachedCount = readCache('skill', skill.skillKey).length;
@@ -318,19 +318,19 @@ export const AiSkillsPanel: React.FC = () => {
         {/* 右侧技能详情/编辑 */}
         <div className="flex-1 min-w-0">
           {selectedSkill ? (
-            <div className="bg-card border border-border rounded-sm flex flex-col h-full">
+            <div className="bg-card border border-border rounded-sm flex flex-col">
               {/* 技能头 */}
-              <div className="flex flex-wrap items-start justify-between gap-3 px-4 sm:px-5 py-3 sm:py-4 border-b border-border">
+              <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 border-b border-border">
                 <div className="min-w-0 flex-1">
                   {editMode ? (
                     <Input
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className="text-lg sm:text-xl font-semibold h-8"
+                      className="text-base font-semibold h-8"
                       placeholder="技能名称"
                     />
                   ) : (
-                    <h2 className="text-lg sm:text-xl font-semibold truncate">{selectedSkill.name}</h2>
+                    <h4 className="text-base font-semibold truncate">{selectedSkill.name}</h4>
                   )}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
                     <span className="text-xs text-muted-foreground font-mono">
@@ -398,7 +398,7 @@ export const AiSkillsPanel: React.FC = () => {
               </div>
 
               {/* 技能内容 */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+              <div className="flex-1 overflow-y-auto max-h-[440px] p-4 space-y-4">
                 {/* 自定义版本号 (仅编辑模式) */}
                 {editMode && (
                   <div className="space-y-1.5">
@@ -472,11 +472,11 @@ export const AiSkillsPanel: React.FC = () => {
                     <Textarea
                       value={editPrompt}
                       onChange={(e) => setEditPrompt(e.target.value)}
-                      className="min-h-[40vh] font-mono text-xs rounded-sm resize-y"
+                      className="min-h-[280px] font-mono text-xs rounded-sm resize-y"
                       placeholder="输入 Prompt 模板..."
                     />
                   ) : (
-                    <pre className="rounded-sm border border-border bg-muted/30 p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-[50vh]">
+                    <pre className="rounded-sm border border-border bg-muted/30 p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-[320px]">
                       {selectedSkill.promptTemplate}
                     </pre>
                   )}
@@ -485,11 +485,11 @@ export const AiSkillsPanel: React.FC = () => {
 
               {/* 版本历史弹层 */}
               {showVersions && (
-                <div className="border-t border-border p-3 sm:p-4 max-h-72 overflow-y-auto">
+                <div className="border-t border-border p-4 max-h-64 overflow-y-auto">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-medium">
+                    <h5 className="text-sm font-medium">
                       版本历史（{cachedVersions.length} 个存档）
-                    </h4>
+                    </h5>
                     <button
                       onClick={() => setShowVersions(false)}
                       className="text-muted-foreground hover:text-foreground"
@@ -543,7 +543,7 @@ export const AiSkillsPanel: React.FC = () => {
               )}
             </div>
           ) : (
-            <div className="bg-card border border-border rounded-sm flex items-center justify-center h-full">
+            <div className="bg-card border border-border rounded-sm flex items-center justify-center min-h-[280px]">
               <div className="text-center">
                 <Wand2 className="size-12 mx-auto text-muted-foreground/30 mb-3" />
                 <p className="text-sm text-muted-foreground">

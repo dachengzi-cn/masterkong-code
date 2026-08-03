@@ -333,8 +333,10 @@ const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cu
             filters={effectiveCommittedFilters}
             dateFrom={committedDateFrom}
             dateTo={committedDateTo}
-            granularity={committedGranularity}
+            granularity={granularity}
+            committedGranularity={committedGranularity}
             onGranularityChange={setGranularity}
+            onCommittedGranularityChange={setCommittedGranularity}
             onLoadingChange={setQuerying}
             onDataChange={setHeatmapData}
           />

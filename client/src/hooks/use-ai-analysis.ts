@@ -72,10 +72,13 @@ export function useAiAnalysis() {
     try {
       const cfg = await getAnalysisConfig();
       setConfig(cfg);
+      setError(null);
       return cfg;
     } catch (err) {
+      const msg = err instanceof Error ? err.message : '加载分析配置失败';
+      setError(msg);
       logger.error('[useAiAnalysis] loadConfig error:', err);
-      return null;
+      throw err;
     }
   }, []);
 

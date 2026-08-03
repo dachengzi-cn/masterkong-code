@@ -17,9 +17,22 @@ interface ChangelogEntry {
   items: Array<ChangelogItem | string>;
 }
 
-const APP_VERSION = 'v1.8.1';
+const APP_VERSION = 'v1.8.2';
 
 const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: 'v1.8.2',
+    date: '2026-08-03',
+    items: [
+      { type: 'removed', text: '删除 AI 设计文档（DocGen）整页及关联前端页面、API 客户端与后端六类文档生成逻辑，仅保留模型调用策略生成' },
+      { type: 'optimized', text: '导航「压货分析」更名为「差异门店分析」，相关导出文件名、空状态提示、Toast 与后端日志前缀同步更新' },
+      { type: 'added', text: '看板总览页新增可自由选择年/月的日期范围选择器（过去3年至未来1年）' },
+      { type: 'added', text: 'AI 内置模型配置面板新增单模型齿轮设置入口，可展开独立配置区并显示测试延迟' },
+      { type: 'optimized', text: 'AI 分析配置区重构加载逻辑，新增加载状态与错误重试按钮，采用并发加载与卸载取消' },
+      { type: 'optimized', text: 'ATP 费用、费用筛选栏、临期筛选栏的筛选项由 SearchableSelect 迁移至统一 Select 组件（h-8 w-[120px]）' },
+      { type: 'added', text: '主题系统支持自定义配色，扩展主题类型与注册机制并接入运行时切换' },
+    ],
+  },
   {
     version: 'v1.8.1',
     date: '2026-07-06',
@@ -211,7 +224,7 @@ const ChangeTypeTag: React.FC<ChangeTypeTagProps> = ({ type }) => {
 
   return (
     <span
-      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded-full border ${classes}`}
+      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded-full border whitespace-nowrap ${classes}`}
     >
       <span className="leading-none">{icon}</span>
       <span className="leading-none">{label}</span>
@@ -314,7 +327,7 @@ const UpdateLog: React.FC = () => {
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center justify-center text-base leading-none text-primary">📦</span>
           <h3 className="text-sm font-bold text-foreground">
-            系统更新日志
+            更新日志
           </h3>
           <span className="text-xs font-mono text-primary bg-primary/10 px-1.5 py-0.5 rounded-sm">
             {APP_VERSION}

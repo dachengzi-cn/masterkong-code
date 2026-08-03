@@ -90,7 +90,7 @@ export class DatasetService implements OnModuleInit {
 
   /**
    * 获取最新数据集的进货记录，按 (customerCode, specification, purchaseMonth) 聚合。
-   * 供其他模块（如压货分析）在内存/DB 模式下复用。
+   * 供其他模块（如差异门店分析）在内存/DB 模式下复用。
    */
   static async getLatestDatasetPurchaseRecords(): Promise<
     Array<{

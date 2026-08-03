@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, Settings2 } from "lucide-react"
+import { Loader2, RefreshCw, Settings2 } from "lucide-react"
 
 import { Label } from "@/components/ui/label"
 import {
@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { useAiAnalysis } from "@/hooks/use-ai-analysis"
 import { getAiModelConfigs } from "@/api/ai-config"
 import type { AiModelConfigItem } from "@shared/api.interface"
@@ -73,14 +74,53 @@ export function AiAnalysisConfigSection() {
   const [builtinModels, setBuiltinModels] = React.useState<AiModelConfigItem[]>([])
   const [customModels, setCustomModels] = React.useState<AiModelEntry[]>([])
   const [saving, setSaving] = React.useState(false)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+  const [loaded, setLoaded] = React.useState(false)
 
   React.useEffect(() => {
-    loadConfig()
-    getAiModelConfigs()
-      .then((res) => setBuiltinModels(res.items))
-      .catch((err) => logger.error("Failed to load AI model configs:", err))
+    let cancelled = false
+    setLoaded(false)
+    setLoadError(null)
+
+    // 加载自定义模型（同步，无需等待）
+    if (!cancelled) setCustomModels(loadModelStore().models)
+
+    Promise.all([
+      loadConfig().catch((err) => {
+        const msg = err instanceof Error ? err.message : "加载配置失败"
+        logger.error("[AiAnalysisConfigSection] loadConfig error:", err)
+        setLoadError(msg)
+        return null
+      }),
+      getAiModelConfigs()
+        .then((res) => !cancelled && setBuiltinModels(res.items))
+        .catch((err) => {
+          logger.error("[AiAnalysisConfigSection] getAiModelConfigs error:", err)
+        }),
+    ])
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
+
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleRetry = async () => {
+    setLoadError(null)
+    const cfg = await loadConfig()
+    if (!cfg) {
+      setLoadError("AI 分析配置加载失败，请稍后重试")
+      return
+    }
+    try {
+      const res = await getAiModelConfigs()
+      setBuiltinModels(res.items)
+    } catch (err) {
+      logger.error("[AiAnalysisConfigSection] retry getAiModelConfigs error:", err)
+    }
     setCustomModels(loadModelStore().models)
-  }, [loadConfig])
+  }
 
   const enabledBuiltinModels = builtinModels.filter((m) => m.isEnabled)
   const allModels: UnifiedModel[] = React.useMemo(() => [
@@ -141,10 +181,32 @@ export function AiAnalysisConfigSection() {
     }
   }
 
-  if (!config) {
+  if (!loaded) {
     return (
       <div className="flex items-center justify-center py-4">
         <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-xs text-muted-foreground">加载中...</span>
+      </div>
+    )
+  }
+
+  if (loadError || !config) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-sm border border-error/30 bg-error/5 p-3 flex items-start gap-2">
+          <span className="text-sm text-error flex-1">
+            {loadError ?? "AI 分析配置加载失败，请检查后端服务是否正常"}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 h-7 rounded-full px-2 text-xs"
+            onClick={handleRetry}
+          >
+            <RefreshCw className="size-3 mr-1" />
+            重试
+          </Button>
+        </div>
       </div>
     )
   }
@@ -313,7 +375,7 @@ export function AiAnalysisConfigSection() {
         </div>
       )}
 
-      {allModels.length === 0 && (
+      {allModels.length === 0 && config.collaborationMode !== "independent" && (
         <div className="rounded-sm border border-border bg-muted/30 p-3 text-center">
           <Settings2 className="mx-auto size-4 text-muted-foreground mb-1" />
           <p className="text-xs text-muted-foreground">

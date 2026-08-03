@@ -1,13 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { Palette, Type, UserCircle, Cpu, Plus, Sparkles } from "lucide-react"
-
 import { usePreferences } from "@/components/theme-provider"
 import { AiConfigSection } from "@/components/business-ui/ai-config-section"
 import { BuiltinAiConfigSection } from "@/components/business-ui/builtin-ai-config-section"
 import { AiAnalysisConfigSection } from "@/components/business-ui/ai-analysis-config-section"
+import { AiSkillsSection } from "@/components/business-ui/ai-skills-section"
 import { AvatarEditor } from "@/components/business-ui/avatar-editor"
+import { CustomColorPanel } from "@/components/business-ui/custom-color-panel"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -20,12 +20,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { fontOptions } from "@/themes/fonts"
 import { emojiOptions } from "@/themes/emojis"
@@ -43,18 +43,20 @@ type SettingsSection =
   | "builtin-ai"
   | "custom-ai"
   | "ai-collaboration"
+  | "ai-skills"
 
 const NAV_ITEMS: Array<{
   id: SettingsSection
   label: string
   icon: React.ReactNode
 }> = [
-  { id: "theme", label: "主题", icon: <Palette className="size-4" /> },
-  { id: "font", label: "字体", icon: <Type className="size-4" /> },
-  { id: "avatar", label: "头像", icon: <UserCircle className="size-4" /> },
-  { id: "builtin-ai", label: "AI 模型接入", icon: <Cpu className="size-4" /> },
-  { id: "custom-ai", label: "自定义模型", icon: <Plus className="size-4" /> },
-  { id: "ai-collaboration", label: "AI 分析协同模式", icon: <Sparkles className="size-4" /> },
+  { id: "theme", label: "主题", icon: <span className="text-base leading-none">🎨</span> },
+  { id: "font", label: "字体", icon: <span className="text-base leading-none">🔤</span> },
+  { id: "avatar", label: "头像", icon: <span className="text-base leading-none">👤</span> },
+  { id: "builtin-ai", label: "AI 模型接入", icon: <span className="text-base leading-none">🔌</span> },
+  { id: "custom-ai", label: "自定义模型", icon: <span className="text-base leading-none">🧩</span> },
+  { id: "ai-collaboration", label: "AI 分析协同模式", icon: <span className="text-base leading-none">🤝</span> },
+  { id: "ai-skills", label: "AI 分析技能", icon: <span className="text-base leading-none">🪄</span> },
 ]
 
 export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
@@ -107,6 +109,14 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
                 ))}
               </SelectContent>
             </Select>
+
+            <div className="border-t border-border pt-4">
+              <h3 className="mb-1 text-sm font-medium text-foreground">自定义配色</h3>
+              <p className="mb-3 text-xs text-muted-foreground">
+                点选或拖动调整主色、辅助色与强调色，实时预览并保存多组方案
+              </p>
+              <CustomColorPanel />
+            </div>
           </section>
         )
 
@@ -278,6 +288,20 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
           </section>
         )
 
+      case "ai-skills":
+        return (
+          <section className="space-y-3">
+            <div>
+              <h3 className="text-sm font-medium text-foreground">AI 分析技能</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                查看与优化各页面分析技能的 Prompt 模板、输出 Schema 与版本存档
+              </p>
+            </div>
+            <Separator />
+            <AiSkillsSection />
+          </section>
+        )
+
       default:
         return null
     }
@@ -285,16 +309,24 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-full sm:max-w-2xl flex flex-col p-0">
-          <SheetHeader className="px-6 pt-6 pb-4 border-b border-border">
-            <SheetTitle>个性化设置</SheetTitle>
-            <SheetDescription>自定义主题、字体、头像与 AI 配置</SheetDescription>
-          </SheetHeader>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          style={{
+            width: "min(1200px, calc(100vw - 2rem))",
+            height: "min(750px, calc(100vh - 2rem))",
+            maxWidth: "none",
+            maxHeight: "none",
+          }}
+          className="flex flex-col gap-0 overflow-hidden rounded-lg border border-border p-0 shadow-lg"
+        >
+          <DialogHeader className="px-6 pt-5 pb-4 border-b border-border">
+            <DialogTitle>系统设置</DialogTitle>
+            <DialogDescription className="sr-only">自定义主题、字体、头像与 AI 配置</DialogDescription>
+          </DialogHeader>
 
           <div className="flex flex-1 overflow-hidden">
             {/* 左侧导航 */}
-            <nav className="w-48 shrink-0 border-r border-border bg-muted/30 overflow-y-auto py-2">
+            <nav className="w-56 shrink-0 border-r border-border bg-muted/30 overflow-y-auto py-2">
               {NAV_ITEMS.map((item) => (
                 <button
                   key={item.id}
@@ -318,8 +350,8 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
               {renderSection()}
             </div>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       <AvatarEditor
         open={editorOpen}

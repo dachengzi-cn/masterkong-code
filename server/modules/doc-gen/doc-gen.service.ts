@@ -170,18 +170,6 @@ export class DocGenService {
   /** 根据分类生成文档内容 */
   private generateContentForCategory(category: DocCategory): string {
     switch (category) {
-      case 'overview':
-        return this.generateOverview();
-      case 'architecture':
-        return this.generateArchitecture();
-      case 'modules':
-        return this.generateModules();
-      case 'api':
-        return this.generateApi();
-      case 'data-flow':
-        return this.generateDataFlow();
-      case 'ui-design':
-        return this.generateUiDesign();
       case 'model-strategy':
         return this.generateModelStrategy();
       default:

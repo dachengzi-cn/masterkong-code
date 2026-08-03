@@ -18,18 +18,19 @@ const ExpiryExpensePage = lazy(() => import('@/pages/ExpiryExpensePage/ExpiryExp
 const AtpExpensePage = lazy(() => import('@/pages/AtpExpensePage/AtpExpensePage'));
 const OverstockPage = lazy(() => import('@/pages/OverstockPage/OverstockPage'));
 const ServiceAnalysisPage = lazy(() => import('@/pages/ServiceAnalysisPage/ServiceAnalysisPage'));
-const DocGenPage = lazy(() => import('@/pages/DocGenPage/DocGenPage'));
 
 export interface SheetItem {
   id: string;
   path: string;
   label: string;
   icon?: string;
+  openedAt?: number;
 }
 
 interface SheetWorkspaceProps {
   sheets: SheetItem[];
   activeSheetId: string | null;
+  duplicateSheetIds?: Set<string>;
   onActivateSheet: (id: string) => void;
   onCloseSheet: (id: string) => void;
   onReorderSheets?: (newSheets: SheetItem[]) => void;
@@ -73,8 +74,6 @@ function SheetContent({ path }: { path: string }) {
         return wrap(<OverstockPage />);
       case '/service-analysis':
         return wrap(<ServiceAnalysisPage />);
-      case '/ai-docs':
-        return wrap(<DocGenPage />);
       default:
         return (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -90,6 +89,7 @@ function SheetContent({ path }: { path: string }) {
 export function SheetWorkspace({
   sheets,
   activeSheetId,
+  duplicateSheetIds,
   onActivateSheet,
   onCloseSheet,
   onReorderSheets,
@@ -171,7 +171,7 @@ export function SheetWorkspace({
           <div className="flex items-center gap-1">
             {sheets.map((sheet, index) => {
               const isActive = sheet.id === activeSheetId;
-              const isDuplicate = pathCounts[sheet.path] > 1;
+              const isDuplicate = duplicateSheetIds?.has(sheet.id) ?? pathCounts[sheet.path] > 1;
 
               return (
                 <button
@@ -185,12 +185,11 @@ export function SheetWorkspace({
                   onDragEnd={handleDragEnd}
                   className={cn(
                     'group relative flex h-7 max-w-[160px] shrink-0 cursor-pointer items-center gap-1.5 rounded-sm border px-2 text-xs transition-all duration-150 ease-out',
-                    isActive
-                      ? 'border-primary bg-accent text-accent-foreground'
-                      : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                    isDuplicate && !isActive
-                      ? 'bg-[hsl(142,70%,95%)] text-[hsl(152,60%,25%)] hover:bg-[hsl(142,70%,92%)]'
-                      : '',
+                    isDuplicate
+                      ? 'border-[hsl(152,60%,42%)]/40 bg-[hsl(152,60%,42%)]/15 text-[hsl(152,60%,30%)] hover:bg-[hsl(152,60%,42%)]/25'
+                      : isActive
+                        ? 'border-primary bg-accent text-accent-foreground'
+                        : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                     draggingId === sheet.id ? 'opacity-50 scale-105' : '',
                     dragOverIndex === index && draggingId !== sheet.id
                       ? 'ring-2 ring-primary ring-offset-1'

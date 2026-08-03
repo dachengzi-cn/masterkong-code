@@ -290,13 +290,13 @@ const OverstockPage: React.FC = () => {
         { wch: 14 },
         { wch: 12 },
       ];
-      XLSX.utils.book_append_sheet(wb, ws, '压货分析明细');
+      XLSX.utils.book_append_sheet(wb, ws, '差异门店分析明细');
 
       XLSX.writeFile(
         wb,
-        `压货分析_${confirmedFilters.monthFrom ?? ''}_${confirmedFilters.monthTo ?? ''}.xlsx`,
+        `差异门店分析_${confirmedFilters.monthFrom ?? ''}_${confirmedFilters.monthTo ?? ''}.xlsx`,
       );
-      toast.success('压货分析导出成功');
+      toast.success('差异门店分析导出成功');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error('Failed to export overstock analysis:', err);
@@ -311,8 +311,8 @@ const OverstockPage: React.FC = () => {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="emoji">📊</EmptyMedia>
-              <EmptyTitle>暂无压货分析数据</EmptyTitle>
-              <EmptyDescription>当前筛选条件下没有压货分析数据，请调整筛选条件</EmptyDescription>
+              <EmptyTitle>暂无差异门店分析数据</EmptyTitle>
+              <EmptyDescription>当前筛选条件下没有差异门店分析数据，请调整筛选条件</EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button onClick={() => navigate('/data')}>前往数据管理</Button>
@@ -326,7 +326,7 @@ const OverstockPage: React.FC = () => {
   return (
     <div className="mx-auto max-w-[1400px] space-y-4 px-6 py-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-base font-bold text-foreground">压货分析</h1>
+        <h1 className="text-base font-bold text-foreground">差异门店分析</h1>
       </div>
 
       <ExpenseFilterBar

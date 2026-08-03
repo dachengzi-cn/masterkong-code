@@ -16,7 +16,7 @@ export function SettingsButton() {
         size="icon"
         className="h-8 w-8 rounded-full"
         onClick={() => setOpen(true)}
-        aria-label="个性化设置"
+        aria-label="系统设置"
       >
         <Settings className="size-4" />
       </Button>

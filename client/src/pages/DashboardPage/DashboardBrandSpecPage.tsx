@@ -25,7 +25,30 @@ const DashboardBrandSpecPage: React.FC = () => {
   const [resolving, setResolving] = useState(!rawDatasetId);
 
   const datasetId = resolvedId ?? rawDatasetId;
+
+  // 用户正在编辑的待确认参数（pending）
   const [filters, setFilters] = useState<HeatmapFilterParams>({ sheetType: DEFAULT_SHEET_TYPES });
+
+  const now = new Date();
+  const defaultDateRange: DateRangeValue = {
+    from: new Date(now.getFullYear(), now.getMonth(), 1),
+    to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
+  };
+  const [dateRange, setDateRange] = useState<DateRangeValue>(defaultDateRange);
+  const [granularity, setGranularity] = useState<TimeGranularity>('day');
+
+  // 已确认提交的参数，只有点击确认后才非 null，用于触发数据查询
+  const [committedFilters, setCommittedFilters] = useState<HeatmapFilterParams | null>(null);
+  const [committedDateRange, setCommittedDateRange] = useState<DateRangeValue | null>(null);
+  const [committedGranularity, setCommittedGranularity] = useState<TimeGranularity | null>(null);
+
+  // 查询进行中的全局状态（用于确认按钮 loading）
+  const [querying, setQuerying] = useState(false);
+
+  const [tableData, setTableData] = useState<HeatmapResponse | null>(null);
+  const [tableLoading, setTableLoading] = useState(false);
+  const [tableError, setTableError] = useState<string | null>(null);
+  const brandSpecTableRef = useRef<BrandSpecTableRef | null>(null);
 
   const effectiveFilters = useMemo((): HeatmapFilterParams => {
     let result = { ...filters };
@@ -41,12 +64,20 @@ const DashboardBrandSpecPage: React.FC = () => {
     return { ...result, dealerType: merged.length > 0 ? merged : undefined };
   }, [filters]);
 
-  const now = new Date();
-  const defaultDateRange: DateRangeValue = {
-    from: new Date(now.getFullYear(), now.getMonth(), 1),
-    to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
-  };
-  const [dateRange, setDateRange] = useState<DateRangeValue>(defaultDateRange);
+  const effectiveCommittedFilters = useMemo((): HeatmapFilterParams | null => {
+    if (!committedFilters) return null;
+    let result = { ...committedFilters };
+    if (!result.sheetType || result.sheetType.length === 0) {
+      result = { ...result, sheetType: DEFAULT_SHEET_TYPES };
+    }
+    if (!result.compositeFormat || result.compositeFormat.length === 0) {
+      return result;
+    }
+    const mappedTypes = getDealerTypesForCompositeFormats(result.compositeFormat);
+    const directTypes = result.dealerType ?? [];
+    const merged = Array.from(new Set([...directTypes, ...mappedTypes]));
+    return { ...result, dealerType: merged.length > 0 ? merged : undefined };
+  }, [committedFilters]);
 
   const formatDateStr = (d: Date): string => {
     const y = d.getFullYear();
@@ -58,20 +89,21 @@ const DashboardBrandSpecPage: React.FC = () => {
   const dateFrom = formatDateStr(dateRange.from);
   const dateTo = formatDateStr(dateRange.to);
 
-  const [granularity] = useState<TimeGranularity>('day');
-  const [tableData, setTableData] = useState<HeatmapResponse | null>(null);
-  const [tableLoading, setTableLoading] = useState(false);
-  const [tableError, setTableError] = useState<string | null>(null);
-  const brandSpecTableRef = useRef<BrandSpecTableRef | null>(null);
+  const committedDateFrom = committedDateRange ? formatDateStr(committedDateRange.from) : null;
+  const committedDateTo = committedDateRange ? formatDateStr(committedDateRange.to) : null;
 
   // 为 AI 分析准备输入数据
   const aiInputData = useMemo(() => {
-    if (!tableData) return { filters: effectiveFilters } as Record<string, unknown>;
+    const aiFilters = effectiveCommittedFilters ?? effectiveFilters;
+    const aiDateFrom = committedDateFrom ?? dateFrom;
+    const aiDateTo = committedDateTo ?? dateTo;
+    const aiGranularity = committedGranularity ?? granularity;
+    if (!tableData) return { filters: aiFilters } as Record<string, unknown>;
     return {
-      filters: effectiveFilters,
-      dateFrom,
-      dateTo,
-      granularity,
+      filters: aiFilters,
+      dateFrom: aiDateFrom,
+      dateTo: aiDateTo,
+      granularity: aiGranularity,
       summary: {
         totalRows: tableData.rows.length,
       },
@@ -84,10 +116,23 @@ const DashboardBrandSpecPage: React.FC = () => {
         rowType: r.rowType,
       })),
     };
-  }, [tableData, effectiveFilters, dateFrom, dateTo, granularity]);
+  }, [tableData, effectiveFilters, effectiveCommittedFilters, dateFrom, dateTo, committedDateFrom, committedDateTo, granularity, committedGranularity]);
+
+  const handleConfirm = () => {
+    setCommittedFilters({ ...filters });
+    setCommittedDateRange({ ...dateRange });
+    setCommittedGranularity(granularity);
+    setQuerying(true);
+  };
 
   const fetchTableData = React.useCallback(async () => {
-    if (!datasetId || !effectiveFilters.sheetType || effectiveFilters.sheetType.length === 0) {
+    if (!datasetId || !committedDateFrom || !committedDateTo || !committedGranularity || !effectiveCommittedFilters) {
+      setTableData(null);
+      setTableLoading(false);
+      setTableError(null);
+      return;
+    }
+    if (!effectiveCommittedFilters.sheetType || effectiveCommittedFilters.sheetType.length === 0) {
       setTableData(null);
       setTableLoading(false);
       setTableError(null);
@@ -96,7 +141,7 @@ const DashboardBrandSpecPage: React.FC = () => {
     setTableLoading(true);
     setTableError(null);
     try {
-      const result = await datasetApi.getHeatmapData(datasetId, dateFrom, dateTo, granularity, effectiveFilters);
+      const result = await datasetApi.getHeatmapData(datasetId, committedDateFrom, committedDateTo, committedGranularity, effectiveCommittedFilters);
       setTableData(result);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -106,11 +151,16 @@ const DashboardBrandSpecPage: React.FC = () => {
     } finally {
       setTableLoading(false);
     }
-  }, [datasetId, dateFrom, dateTo, granularity, effectiveFilters]);
+  }, [datasetId, committedDateFrom, committedDateTo, committedGranularity, effectiveCommittedFilters]);
 
   useEffect(() => {
     fetchTableData();
   }, [fetchTableData]);
+
+  // 查询 loading 状态同步给确认按钮
+  useEffect(() => {
+    setQuerying(tableLoading);
+  }, [tableLoading]);
 
   useEffect(() => {
     if (rawDatasetId) {
@@ -186,6 +236,8 @@ const DashboardBrandSpecPage: React.FC = () => {
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
         onReset={() => setDateRange(defaultDateRange)}
+        onConfirm={handleConfirm}
+        confirming={querying}
         showBrandFilter={false}
         showSpecFilter={false}
         showDownloadUnconverted={false}
@@ -226,7 +278,7 @@ const DashboardBrandSpecPage: React.FC = () => {
         }
       />
       {datasetId && (
-        effectiveFilters.sheetType && effectiveFilters.sheetType.length > 0 ? (
+        effectiveCommittedFilters && committedDateFrom && committedDateTo && committedGranularity ? (
           <>
             {tableError && (
               <div className="flex items-center justify-center min-h-[200px] bg-card border border-border rounded-sm">
@@ -249,9 +301,9 @@ const DashboardBrandSpecPage: React.FC = () => {
               rows={tableData?.rows ?? []}
               loading={tableLoading}
               datasetId={datasetId}
-              dateFrom={dateFrom}
-              dateTo={dateTo}
-              filters={effectiveFilters}
+              dateFrom={committedDateFrom}
+              dateTo={committedDateTo}
+              filters={effectiveCommittedFilters}
             />
           </>
         ) : (
@@ -259,8 +311,8 @@ const DashboardBrandSpecPage: React.FC = () => {
             <Empty className="border-none">
               <EmptyHeader>
                 <EmptyMedia variant="emoji">📊</EmptyMedia>
-                <EmptyTitle>暂无分析数据</EmptyTitle>
-                <EmptyDescription>请选择至少一个数据源以查看分析数据</EmptyDescription>
+                <EmptyTitle>等待确认查询</EmptyTitle>
+                <EmptyDescription>请选择数据源及筛选条件，点击「确认查询」后查看分析数据</EmptyDescription>
               </EmptyHeader>
             </Empty>
           </div>

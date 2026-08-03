@@ -1,45 +1,24 @@
-export type ThemeToken =
-  | '--background'
-  | '--foreground'
-  | '--card'
-  | '--card-foreground'
-  | '--popover'
-  | '--popover-foreground'
-  | '--primary'
-  | '--primary-foreground'
-  | '--secondary'
-  | '--secondary-foreground'
-  | '--muted'
-  | '--muted-foreground'
-  | '--accent'
-  | '--accent-foreground'
-  | '--info'
-  | '--info-foreground'
-  | '--destructive'
-  | '--destructive-foreground'
-  | '--success'
-  | '--success-foreground'
-  | '--warning'
-  | '--warning-foreground'
-  | '--border'
-  | '--input'
-  | '--ring'
-  | '--sidebar'
-  | '--sidebar-foreground'
-  | '--sidebar-primary'
-  | '--sidebar-primary-foreground'
-  | '--sidebar-accent'
-  | '--sidebar-accent-foreground'
-  | '--sidebar-border'
-  | '--sidebar-ring'
-  | '--font-sans'
-  | '--font-mono'
-  | '--radius';
+export type BaseMode = 'light' | 'dark'
 
-export type ThemeTokens = Partial<Record<ThemeToken, string>>;
+export interface ColorPick {
+  primary: string
+  accent: string
+  success: string
+}
+
+export interface CustomColorScheme {
+  id: string
+  name: string
+  primary: string
+  accent: string
+  success: string
+  baseMode: BaseMode
+  createdAt: number
+}
 
 export interface Theme {
-  id: string;
-  name: string;
-  preview: string;
+  id: string
+  name: string
+  preview: string
+  custom?: boolean
 }

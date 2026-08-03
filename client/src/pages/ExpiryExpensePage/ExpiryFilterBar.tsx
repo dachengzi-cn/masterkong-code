@@ -2,7 +2,14 @@ import React from 'react';
 
 import { Button } from '@/components/ui/button';
 import MultiSelect from '@/components/ui/multi-select';
-import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { ExpiryAnalysisFilters } from '@shared/api.interface';
 import FilterBar from '@/components/business-ui/filter-bar';
 
@@ -58,23 +65,41 @@ const ExpiryFilterBar: React.FC<ExpiryFilterBarProps> = ({
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground shrink-0">年月区间</span>
-          <SearchableSelect
+          <Select
             value={filters.monthFrom ?? ''}
             onValueChange={(v) =>
               onChange({ ...filters, monthFrom: v || undefined })
             }
-            options={options.months}
-            triggerClassName="h-8 w-[120px]"
-          />
+          >
+            <SelectTrigger className="h-8 w-[120px]">
+              <SelectValue placeholder="选择起始月份" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {options.months.map((month) => (
+                  <SelectItem key={month} value={month}>{month}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <span className="text-xs text-muted-foreground">~</span>
-          <SearchableSelect
+          <Select
             value={filters.monthTo ?? ''}
             onValueChange={(v) =>
               onChange({ ...filters, monthTo: v || undefined })
             }
-            options={options.months}
-            triggerClassName="h-8 w-[120px]"
-          />
+          >
+            <SelectTrigger className="h-8 w-[120px]">
+              <SelectValue placeholder="选择结束月份" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {options.months.map((month) => (
+                  <SelectItem key={month} value={month}>{month}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="w-px h-5 bg-border mx-1" />

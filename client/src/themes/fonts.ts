@@ -5,86 +5,57 @@ export interface FontOption {
   cdnUrl?: string;
 }
 
+// 仅使用操作系统自带的基础字体，无需 CDN 加载，切换即可生效。
+// 每个字体优先指定对应系统的字体名，确保跨平台可命中且不互相回退掩盖差异。
 export const fontOptions: FontOption[] = [
   {
-    id: 'source-han-sans',
-    name: '思源黑体',
-    family:
-      '"Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
-    cdnUrl:
-      'https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap',
+    id: 'system-default',
+    name: '系统默认',
+    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
   },
   {
-    id: 'pingfang-sc',
+    id: 'pingfang',
     name: '苹方',
-    family:
-      '"PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+    family: '"PingFang SC", "PingFang TC", "Hiragino Sans GB", sans-serif',
   },
   {
     id: 'microsoft-yahei',
     name: '微软雅黑',
-    family:
-      '"Microsoft YaHei", "PingFang SC", -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+    family: '"Microsoft YaHei", "Microsoft YaHei UI", "PingFang SC", sans-serif',
   },
   {
-    id: 'harmonyos-sans',
-    name: '鸿蒙黑体',
-    family:
-      '"HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
+    id: 'simhei',
+    name: '黑体',
+    family: 'SimHei, "Heiti SC", "PingFang SC", sans-serif',
   },
   {
-    id: 'misans',
-    name: '小米兰亭',
-    family: '"MiSans", "PingFang SC", "Microsoft YaHei", sans-serif',
+    id: 'simsun',
+    name: '宋体',
+    family: 'SimSun, "Songti SC", "STSong", serif',
   },
   {
-    id: 'oppo-sans',
-    name: 'OPPO Sans',
-    family: '"OPPO Sans", "PingFang SC", "Microsoft YaHei", sans-serif',
+    id: 'kaiti',
+    name: '楷体',
+    family: 'KaiTi, "Kaiti SC", "STKaiti", "PingFang SC", serif',
   },
   {
-    id: 'alibaba-puhuiti',
-    name: '阿里巴巴普惠体',
-    family:
-      '"Alibaba PuHuiTi", "PingFang SC", "Microsoft YaHei", sans-serif',
-    cdnUrl:
-      'https://chinese-font.netlify.app/packages/alipuhui/dist/Alibaba-PuHuiTi-Regular/result.css',
+    id: 'fangsong',
+    name: '仿宋',
+    family: 'FangSong, "FangSong_GB2312", "STFangsong", "PingFang SC", serif',
   },
   {
-    id: 'lxgw-wenkai',
-    name: '霞鹜文楷',
-    family: '"LXGW WenKai", "PingFang SC", "Microsoft YaHei", serif',
-    cdnUrl:
-      'https://chinese-font.netlify.app/packages/lxgwwenkai/dist/LXGWWenKai-Regular/result.css',
+    id: 'arial',
+    name: 'Arial',
+    family: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
   },
   {
-    id: 'smiley-sans',
-    name: '得意黑',
-    family: '"Smiley Sans", "PingFang SC", "Microsoft YaHei", sans-serif',
-    cdnUrl:
-      'https://chinese-font.netlify.app/packages/dyh/dist/SmileySans-Oblique/result.css',
+    id: 'helvetica',
+    name: 'Helvetica',
+    family: 'Helvetica, "Helvetica Neue", Arial, sans-serif',
   },
   {
-    id: 'zcool-kuaile',
-    name: '站酷快乐体',
-    family: '"ZCOOL KuaiLe", "PingFang SC", "Microsoft YaHei", sans-serif',
-    cdnUrl:
-      'https://chinese-font.netlify.app/packages/zkkl/dist/ZCOOLKuaiLe-Regular/result.css',
-  },
-  {
-    id: 'youshe-biaotihei',
-    name: '优设标题黑',
-    family:
-      '"YouSheBiaoTiHei", "PingFang SC", "Microsoft YaHei", sans-serif',
-    cdnUrl:
-      'https://chinese-font.netlify.app/packages/ysbth/dist/YouSheBiaoTiHei-Regular/result.css',
-  },
-  {
-    id: 'source-han-serif',
-    name: '思源宋体',
-    family:
-      '"Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", serif',
-    cdnUrl:
-      'https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&display=swap',
+    id: 'times-new-roman',
+    name: 'Times New Roman',
+    family: '"Times New Roman", Times, "Songti SC", serif',
   },
 ];

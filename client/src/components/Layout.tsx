@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   SidebarProvider,
@@ -14,6 +14,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubItem,
   SidebarMenuSubButton,
+  SidebarMenuAction,
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
@@ -39,6 +40,7 @@ import {
   type SheetItem,
 } from '@/components/business-ui/sheet-workspace';
 import { usePreferences } from '@/components/theme-provider';
+import { useCrossTabSheets } from '@/hooks/use-cross-tab-sheets';
 
 const NAV_ITEMS = [
   { path: '/', label: '主页', icon: '🏠' },
@@ -56,13 +58,12 @@ const DASHBOARD_SUB_ITEMS = [
 const EXPENSE_SUB_ITEMS = [
   { path: '/expense/expiry', label: '临期费用分析', icon: '⏰' },
   { path: '/expense/atp', label: 'ATP费用分析', icon: '⚡' },
-  { path: '/expense/overstock', label: '压货分析', icon: '📦' },
+  { path: '/expense/overstock', label: '差异门店分析', icon: '📦' },
 ];
 
 const FOOTER_NAV_ITEMS = [
   { path: '/data', label: '数据管理', icon: '🗄️', labelClass: 'font-extrabold text-[#c8dd5f]' },
   { path: '/customer-list', label: '客户列表', icon: '📋', labelClass: 'font-extrabold text-[#95e599]' },
-  { path: '/ai-docs', label: 'AI 设计文档', icon: '📘', labelClass: 'font-extrabold text-[#7dd3fc]' },
 ];
 
 
@@ -80,7 +81,7 @@ const LayoutContent = () => {
 
   const openSheet = useCallback((path: string, label: string, icon?: string) => {
     const id = `${path}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const newSheet: SheetItem = { id, path, label, icon };
+    const newSheet: SheetItem = { id, path, label, icon, openedAt: Date.now() };
     setSheets((prev) => [...prev, newSheet]);
     setActiveSheetId(id);
   }, []);
@@ -106,6 +107,35 @@ const LayoutContent = () => {
   const handleReorderSheets = useCallback((newSheets: SheetItem[]) => {
     setSheets(newSheets);
   }, []);
+
+  // 跨标签页同步 sheet 状态，并计算需要高亮为绿色的重复标签
+  const syncedSheets = useMemo(
+    () => sheets.map((s) => ({ id: s.id, path: s.path, openedAt: s.openedAt ?? 0 })),
+    [sheets]
+  );
+  const { tabId, allTabs } = useCrossTabSheets(syncedSheets);
+
+  const duplicateSheetIds = useMemo(() => {
+    const globalSheets = [
+      ...syncedSheets,
+      ...Object.values(allTabs)
+        .filter((tab) => tab.tabId !== tabId)
+        .flatMap((tab) => tab.sheets),
+    ];
+
+    const byPath: Record<string, typeof globalSheets> = {};
+    for (const sheet of globalSheets) {
+      (byPath[sheet.path] ??= []).push(sheet);
+    }
+
+    const ids = new Set<string>();
+    for (const list of Object.values(byPath)) {
+      if (list.length <= 1) continue;
+      const sorted = [...list].sort((a, b) => a.openedAt - b.openedAt);
+      ids.add(sorted[sorted.length - 1].id);
+    }
+    return ids;
+  }, [syncedSheets, allTabs, tabId]);
 
   // Auto-expand when navigating to a dashboard sub-route
   useEffect(() => {
@@ -234,17 +264,35 @@ const LayoutContent = () => {
                 {/* 成交分析 — 可折叠二级目录 */}
                 <SidebarMenuItem>
                   <SidebarMenuButton
+                    asChild
                     isActive={sheets.some((sheet) => sheet.path.startsWith('/dashboard') && sheet.id === activeSheetId)}
-                    onClick={() => {
-                      setDashboardExpanded((prev) => !prev);
-                      openSheet('/dashboard/overview', '成交分析', '📊');
-                    }}
                     tooltip="成交分析"
                   >
-                    <span className="flex size-4 items-center justify-center text-base leading-none">📊</span>
-                    <span className="font-extrabold group-data-[collapsible=icon]:hidden">成交分析</span>
-                    <span className="ml-auto text-base leading-none group-data-[collapsible=icon]:hidden transition-transform duration-150 ease-out">{dashboardExpanded ? '▼' : '▶'}</span>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openSheet('/dashboard/overview', '成交分析', '📊')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openSheet('/dashboard/overview', '成交分析', '📊');
+                        }
+                      }}
+                    >
+                      <span className="flex size-4 items-center justify-center text-base leading-none">📊</span>
+                      <span className="font-extrabold group-data-[collapsible=icon]:hidden">成交分析</span>
+                    </div>
                   </SidebarMenuButton>
+                  <SidebarMenuAction
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDashboardExpanded((prev) => !prev);
+                    }}
+                    className="group-data-[collapsible=icon]:hidden"
+                    aria-label={dashboardExpanded ? '收起成交分析' : '展开成交分析'}
+                  >
+                    <span className="text-base leading-none transition-transform duration-150 ease-out">{dashboardExpanded ? '▼' : '▶'}</span>
+                  </SidebarMenuAction>
                   {dashboardExpanded && (
                     <SidebarMenuSub>
                       {DASHBOARD_SUB_ITEMS.map((sub) => (
@@ -264,17 +312,35 @@ const LayoutContent = () => {
                 {/* 费用总览 — 可折叠二级目录 */}
                 <SidebarMenuItem>
                   <SidebarMenuButton
+                    asChild
                     isActive={sheets.some((sheet) => sheet.path.startsWith('/expense') && sheet.id === activeSheetId)}
-                    onClick={() => {
-                      setExpenseExpanded((prev) => !prev);
-                      openSheet('/expense', '费用总览', '💰');
-                    }}
                     tooltip="费用总览"
                   >
-                    <span className="flex size-4 items-center justify-center text-base leading-none">💰</span>
-                    <span className="font-extrabold group-data-[collapsible=icon]:hidden">费用总览</span>
-                    <span className="ml-auto text-base leading-none group-data-[collapsible=icon]:hidden transition-transform duration-150 ease-out">{expenseExpanded ? '▼' : '▶'}</span>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openSheet('/expense', '费用总览', '💰')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openSheet('/expense', '费用总览', '💰');
+                        }
+                      }}
+                    >
+                      <span className="flex size-4 items-center justify-center text-base leading-none">💰</span>
+                      <span className="font-extrabold group-data-[collapsible=icon]:hidden">费用总览</span>
+                    </div>
                   </SidebarMenuButton>
+                  <SidebarMenuAction
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpenseExpanded((prev) => !prev);
+                    }}
+                    className="group-data-[collapsible=icon]:hidden"
+                    aria-label={expenseExpanded ? '收起费用总览' : '展开费用总览'}
+                  >
+                    <span className="text-base leading-none transition-transform duration-150 ease-out">{expenseExpanded ? '▼' : '▶'}</span>
+                  </SidebarMenuAction>
                   {expenseExpanded && (
                     <SidebarMenuSub>
                       {EXPENSE_SUB_ITEMS.map((sub) => (
@@ -382,6 +448,7 @@ const LayoutContent = () => {
           <SheetWorkspace
             sheets={sheets}
             activeSheetId={activeSheetId}
+            duplicateSheetIds={duplicateSheetIds}
             onActivateSheet={activateSheet}
             onCloseSheet={closeSheet}
             onReorderSheets={handleReorderSheets}

@@ -2,7 +2,14 @@ import React from 'react';
 
 import { Button } from '@/components/ui/button';
 import MultiSelect from '@/components/ui/multi-select';
-import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type {
   ExpenseOverviewFilters,
   CombinedFilterOptions,
@@ -56,27 +63,38 @@ const ExpenseFilterBar: React.FC<ExpenseFilterBarProps> = ({
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground shrink-0">月份起</span>
-          <SearchableSelect
+          <span className="text-xs text-muted-foreground shrink-0">年月区间</span>
+          <Select
             value={filters.monthFrom ?? ''}
-            onValueChange={(v) =>
-              onChange({ ...filters, monthFrom: v || undefined })
-            }
-            options={options.months}
-            triggerClassName="h-8 w-[120px]"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground shrink-0">月份止</span>
-          <SearchableSelect
+            onValueChange={(v) => onChange({ ...filters, monthFrom: v || undefined })}
+          >
+            <SelectTrigger className="h-8 w-[120px]">
+              <SelectValue placeholder="选择起始月份" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {options.months.map((month) => (
+                  <SelectItem key={month} value={month}>{month}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground">~</span>
+          <Select
             value={filters.monthTo ?? ''}
-            onValueChange={(v) =>
-              onChange({ ...filters, monthTo: v || undefined })
-            }
-            options={options.months}
-            triggerClassName="h-8 w-[120px]"
-          />
+            onValueChange={(v) => onChange({ ...filters, monthTo: v || undefined })}
+          >
+            <SelectTrigger className="h-8 w-[120px]">
+              <SelectValue placeholder="选择结束月份" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {options.months.map((month) => (
+                  <SelectItem key={month} value={month}>{month}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="w-px h-5 bg-border mx-1" />
@@ -125,44 +143,6 @@ const ExpenseFilterBar: React.FC<ExpenseFilterBarProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground shrink-0">
-            业务（临期）
-          </span>
-          <MultiSelect
-            label="业务"
-            options={options.businesses}
-            value={filters.business ?? []}
-            onChange={(v: string[]) => updateArray('business', v)}
-            triggerClassName="h-8 w-[120px] rounded-full"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground shrink-0">
-            业代（ATP）
-          </span>
-          <MultiSelect
-            label="业代"
-            options={options.salesReps}
-            value={filters.salesRep ?? []}
-            onChange={(v: string[]) => updateArray('salesRep', v)}
-            triggerClassName="h-8 w-[120px] rounded-full"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground shrink-0">
-            综合业态（ATP）
-          </span>
-          <MultiSelect
-            label="综合业态"
-            options={options.compositeFormats}
-            value={filters.compositeFormat ?? []}
-            onChange={(v: string[]) => updateArray('compositeFormat', v)}
-            triggerClassName="h-8 w-[120px] rounded-full"
-          />
-        </div>
       </div>
 
       <div className="flex items-center justify-end gap-2 mt-3">

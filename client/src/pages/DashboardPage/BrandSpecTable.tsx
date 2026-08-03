@@ -22,6 +22,7 @@ import type {
   BrandSpecStatsRow,
   BrandSpecDimensionMonthlyStat,
 } from '@shared/api.interface';
+import { extractChineseName } from './tableFormat';
 
 interface AddedColumn {
   id: string;
@@ -221,10 +222,10 @@ function getRowBg(rowType?: HeatmapRowType): string {
 function getRowText(rowType?: HeatmapRowType): string {
   switch (rowType) {
     case 'tier':
-      return 'text-foreground font-medium';
+      return 'text-foreground !font-bold';
     case 'region':
     case 'total':
-      return 'text-foreground font-semibold';
+      return 'text-foreground !font-bold';
     default:
       return 'text-foreground';
   }
@@ -244,7 +245,7 @@ function getTierCell(row: HeatmapRow): string {
 
 function getSalesRepCell(row: HeatmapRow): string {
   if (row.rowType && row.rowType !== 'data') return '';
-  return row.salesRep;
+  return extractChineseName(row.salesRep);
 }
 
 function getRowKey(row: { rowType?: HeatmapRowType; region: string; tier: string; salesRep: string }): string {
@@ -300,7 +301,40 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
     pairs: [],
   });
   const [customOptions, setCustomOptions] = useState<StoredCustomOptions>(loadCustomOptions);
-  const [addedColumns, setAddedColumns] = useState<AddedColumn[]>([]);
+  // 默认预置 3 个常用筛选列（2 个品牌列 + 1 个规格列），便于用户直接进行快速筛选；
+  // 当筛选需求超过三个时，可通过「添加列」自主追加更多列。
+  const [addedColumns, setAddedColumns] = useState<AddedColumn[]>(() => [
+    {
+      id: 'preset-brand-1',
+      type: 'brand',
+      values: [],
+      data: {},
+      storeCountData: {},
+      threeMonthData: {},
+      threeMonthStoreCountData: {},
+      loading: false,
+    },
+    {
+      id: 'preset-brand-2',
+      type: 'brand',
+      values: [],
+      data: {},
+      storeCountData: {},
+      threeMonthData: {},
+      threeMonthStoreCountData: {},
+      loading: false,
+    },
+    {
+      id: 'preset-spec-1',
+      type: 'specification',
+      values: [],
+      data: {},
+      storeCountData: {},
+      threeMonthData: {},
+      threeMonthStoreCountData: {},
+      loading: false,
+    },
+  ]);
 
   const [drilldownRowKey, setDrilldownRowKey] = useState<string | null>(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
@@ -641,19 +675,19 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10">
             <tr className="bg-accent/50 border-b border-border">
-              <th className="px-4 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">
+              <th className="px-4 py-2 text-left !font-bold text-muted-foreground whitespace-nowrap">
                 所别
               </th>
-              <th className="px-4 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">
+              <th className="px-4 py-2 text-left !font-bold text-muted-foreground whitespace-nowrap">
                 阶层
               </th>
-              <th className="px-4 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">
+              <th className="px-4 py-2 text-left !font-bold text-muted-foreground whitespace-nowrap">
                 业代
               </th>
-              <th className="px-4 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">
+              <th className="px-4 py-2 text-right !font-bold text-muted-foreground whitespace-nowrap">
                 点数
               </th>
-              <th className="px-4 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">
+              <th className="px-4 py-2 text-right !font-bold text-muted-foreground whitespace-nowrap">
                 合计箱数
               </th>
               {addedColumns.map((col) => {
@@ -663,7 +697,7 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
                     : Array.from(new Set([...specOptions.specifications, ...customOptions.specifications]));
                 return (
                   <React.Fragment key={col.id}>
-                    <th className="px-2 py-2 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[160px]">
+                    <th className="px-2 py-2 text-center !font-bold text-muted-foreground whitespace-nowrap min-w-[160px]">
                       <div className="flex items-center justify-center gap-1">
                         <MultiSelect
                           label={col.type === 'brand' ? '品牌' : '规格'}
@@ -688,15 +722,15 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
                         {col.type === 'brand' ? '品牌箱数' : '规格箱数'}
                       </div>
                     </th>
-                    <th className="px-2 py-2 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[80px]">
+                    <th className="px-2 py-2 text-center !font-bold text-muted-foreground whitespace-nowrap min-w-[80px]">
                       {getColumnLabel(col.values)} 占比%
                     </th>
-                    <th className="px-2 py-2 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[100px]">
+                    <th className="px-2 py-2 text-center !font-bold text-muted-foreground whitespace-nowrap min-w-[100px]">
                       <div className="whitespace-normal leading-tight">
                         {getColumnLabel(col.values)} 近三月月合计箱数
                       </div>
                     </th>
-                    <th className="px-2 py-2 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[100px]">
+                    <th className="px-2 py-2 text-center !font-bold text-muted-foreground whitespace-nowrap min-w-[100px]">
                       <div className="whitespace-normal leading-tight">
                         {getColumnLabel(col.values)} 近三月成交门店数
                       </div>
@@ -806,15 +840,15 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
                             <table className="w-full text-xs border border-border rounded-sm">
                               <thead>
                                 <tr className="bg-accent/40 border-b border-border">
-                                  <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap sticky left-0 bg-accent/40">
+                                  <th className="px-3 py-2 text-left !font-bold text-muted-foreground whitespace-nowrap sticky left-0 bg-accent/40">
                                     维度值
                                   </th>
                                   {months.map((month) => (
                                     <React.Fragment key={month}>
-                                      <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap border-l border-border/40">
+                                      <th className="px-3 py-2 text-right !font-bold text-muted-foreground whitespace-nowrap border-l border-border/40">
                                         {month} 箱数
                                       </th>
-                                      <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">
+                                      <th className="px-3 py-2 text-right !font-bold text-muted-foreground whitespace-nowrap">
                                         {month} 门店数
                                       </th>
                                     </React.Fragment>

@@ -2,7 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import MultiSelect from '@/components/ui/multi-select';
-import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -280,25 +287,43 @@ const AtpExpensePage: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground shrink-0">年月区间</span>
-            <SearchableSelect
+            <Select
               value={startMonth}
-              onValueChange={(v: string) => {
+              onValueChange={(v) => {
                 setStartMonth(v);
                 if (v > endMonth) setEndMonth(v);
               }}
-              options={monthOptions}
-              triggerClassName="h-8 w-[120px]"
-            />
+            >
+              <SelectTrigger className="h-8 w-[120px]">
+                <SelectValue placeholder="选择起始月份" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {monthOptions.map((month) => (
+                    <SelectItem key={month} value={month}>{month}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
             <span className="text-xs text-muted-foreground">~</span>
-            <SearchableSelect
+            <Select
               value={endMonth}
-              onValueChange={(v: string) => {
+              onValueChange={(v) => {
                 setEndMonth(v);
                 if (v < startMonth) setStartMonth(v);
               }}
-              options={monthOptions}
-              triggerClassName="h-8 w-[120px]"
-            />
+            >
+              <SelectTrigger className="h-8 w-[120px]">
+                <SelectValue placeholder="选择结束月份" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {monthOptions.map((month) => (
+                    <SelectItem key={month} value={month}>{month}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="w-px h-5 bg-border mx-1" />

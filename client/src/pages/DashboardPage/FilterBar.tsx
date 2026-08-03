@@ -517,7 +517,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                 className="gap-1"
               >
                 <span className="inline-flex items-center justify-center text-base leading-none" >⬇️</span>
-                下载未成交门店
+                未成交明细
               </Button>
             )}
 

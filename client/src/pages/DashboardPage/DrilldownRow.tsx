@@ -74,7 +74,7 @@ const BreakdownTable = memo(({
 
   const titleEl = (
     <div className="flex items-center px-4 py-1.5 border-b border-border bg-accent/30">
-      <p className="text-[12px] font-semibold text-foreground tracking-wide whitespace-nowrap">{title}</p>
+      <p className="text-[12px] !font-bold text-foreground tracking-wide whitespace-nowrap">{title}</p>
       {periodLabel && (
         <span
           className="ml-9 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap"
@@ -109,12 +109,12 @@ const BreakdownTable = memo(({
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-border bg-accent/10">
-              <th className="px-3 py-1 text-left font-medium text-muted-foreground min-w-[60px] whitespace-nowrap">
+            <tr className="border-b border-border bg-accent/50">
+              <th className="px-3 py-1 text-left !font-bold text-muted-foreground min-w-[60px] whitespace-nowrap">
                 <span className="text-[11px]">指标</span>
               </th>
               {items.map((item, idx) => (
-                <th key={itemKeys[idx]} className="px-3 py-1 text-right font-medium text-foreground min-w-[70px]">
+                <th key={itemKeys[idx]} className="px-3 py-1 text-right !font-bold text-foreground min-w-[70px]">
                   <span className="text-[11px] truncate block max-w-[100px]" title={labelExtractor(item)}>
                     {labelExtractor(item)}
                   </span>
@@ -123,30 +123,30 @@ const BreakdownTable = memo(({
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-border/60 hover:bg-accent/5 transition-colors duration-150">
-              <td className="px-3 py-1 text-muted-foreground font-medium text-[11px] whitespace-nowrap">{ROW_LABELS[0]}</td>
+            <tr className="border-b border-border/60 hover:bg-accent/10 transition-colors duration-150">
+              <td className="px-3 py-1 text-muted-foreground !font-bold text-[11px] whitespace-nowrap">{ROW_LABELS[0]}</td>
               {items.map((item, idx) => (
                 <td key={itemKeys[idx]} className="px-3 py-1 text-right font-mono text-foreground text-[12px] tabular-nums">
                   {item.totalStores}
                 </td>
               ))}
             </tr>
-            <tr className="border-b border-border/60 hover:bg-accent/5 transition-colors duration-150">
-              <td className="px-3 py-1 text-muted-foreground font-medium text-[11px] whitespace-nowrap">{ROW_LABELS[1]}</td>
+            <tr className="border-b border-border/60 hover:bg-accent/10 transition-colors duration-150">
+              <td className="px-3 py-1 text-muted-foreground !font-bold text-[11px] whitespace-nowrap">{ROW_LABELS[1]}</td>
               {items.map((item, idx) => (
                 <td key={itemKeys[idx]} className="px-3 py-1 text-right font-mono text-foreground text-[12px] tabular-nums">
                   {item.dealtStores}
                 </td>
               ))}
             </tr>
-            <tr className="hover:bg-accent/5 transition-colors duration-150 bg-accent/5">
-              <td className="px-3 py-1 text-muted-foreground font-medium text-[11px] whitespace-nowrap">{ROW_LABELS[2]}</td>
+            <tr className="hover:bg-accent/10 transition-colors duration-150 bg-accent/5">
+              <td className="px-3 py-1 text-muted-foreground !font-bold text-[11px] whitespace-nowrap">{ROW_LABELS[2]}</td>
               {items.map((item, idx) => {
                 const bg = getRateBg(item.dealRate);
                 return (
                   <td
                     key={itemKeys[idx]}
-                    className="px-3 py-1 text-right font-mono font-semibold text-primary text-[12px] tabular-nums"
+                    className="px-3 py-1 text-right font-mono !font-bold text-primary text-[12px] tabular-nums"
                     style={bg ? { backgroundColor: bg } : undefined}
                   >
                     {item.dealRate > 0 ? `${item.dealRate}%` : '-'}
@@ -177,7 +177,7 @@ const DailyBreakdownTable = memo(({
     return (
       <div className="bg-card border border-border rounded-sm overflow-hidden">
         <div className="px-4 py-1.5 border-b border-border bg-accent/30">
-          <p className="text-[12px] font-semibold text-foreground tracking-wide">当日成交明细</p>
+          <p className="text-[12px] !font-bold text-foreground tracking-wide">当日成交明细</p>
         </div>
         <div className="px-4 py-6 flex items-center justify-center">
           <Empty className="border-none py-0">
@@ -193,14 +193,14 @@ const DailyBreakdownTable = memo(({
   }
 
   const renderRow = (label: string, extractor: (dd: HeatmapDailyData) => number | null, highlight?: boolean) => (
-    <tr className={`border-b border-border/60 hover:bg-accent/5 transition-colors duration-150 ${highlight ? 'bg-accent/5' : ''}`}>
-      <td className="px-3 py-1 text-muted-foreground font-medium text-[11px] whitespace-nowrap">{label}</td>
+    <tr className={`border-b border-border/60 hover:bg-accent/10 transition-colors duration-150 ${highlight ? 'bg-accent/5' : ''}`}>
+      <td className="px-3 py-1 text-muted-foreground !font-bold text-[11px] whitespace-nowrap">{label}</td>
       {dailyData.map((dd, idx) => {
         const val = extractor(dd);
         return (
           <td
             key={colKeys[idx]}
-            className={`px-2 py-1 text-right font-mono text-[12px] tabular-nums ${highlight ? 'font-semibold text-primary' : 'text-foreground'}`}
+            className={`px-2 py-1 text-right font-mono text-[12px] tabular-nums ${highlight ? '!font-bold text-primary' : 'text-foreground'}`}
           >
             {val != null && val > 0 ? val : (val === 0 ? '-' : '')}
           </td>
@@ -212,17 +212,17 @@ const DailyBreakdownTable = memo(({
   return (
     <div className="bg-card border border-border rounded-sm overflow-hidden">
       <div className="px-4 py-1.5 border-b border-border bg-accent/30">
-        <p className="text-[12px] font-semibold text-foreground tracking-wide">当日成交明细</p>
+        <p className="text-[12px] !font-bold text-foreground tracking-wide">当日成交明细</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-border bg-accent/10">
-              <th className="px-3 py-1 text-left font-medium text-muted-foreground min-w-[80px] sticky left-0 bg-accent/10 z-10">
+            <tr className="border-b border-border bg-accent/50">
+              <th className="px-3 py-1 text-left !font-bold text-muted-foreground min-w-[80px] sticky left-0 bg-accent/50 z-10">
                 <span className="text-[11px]">日期</span>
               </th>
               {dailyData.map((dd, idx) => (
-                <th key={colKeys[idx]} className="px-2 py-1 text-right font-medium text-foreground min-w-[50px]">
+                <th key={colKeys[idx]} className="px-2 py-1 text-right !font-bold text-foreground min-w-[50px]">
                   <span className="text-[11px]">{dd.label}</span>
                   {columns[idx]?.subLabel && (
                     <span className="text-[10px] text-muted-foreground ml-1">{columns[idx].subLabel}</span>

@@ -4,6 +4,27 @@ import { fontOptions } from '@/themes/fonts';
 import { emojiOptions } from '@/themes/emojis';
 import type { Theme } from '@/themes/types';
 import type { FontOption } from '@/themes/fonts';
+import {
+  applyCustomTheme,
+  clearCustomVars,
+} from '@/themes/custom-color';
+import { loadCustomSchemes, saveCustomSchemes } from '@/themes/custom-storage';
+import type { CustomColorScheme } from '@/themes/types';
+
+// 将当前主色同步到浏览器 <meta name="theme-color">，使移动端标签页/地址栏颜色随主题更新。
+// 读取已挂载到 documentElement 上的 --primary（内置主题由 CSS 提供，自定义主题由 applyCustomTheme 写入）。
+function syncThemeColor() {
+  if (typeof document === 'undefined') return
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()
+  const color = raw || '#3b82f6'
+  let meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null
+  if (!meta) {
+    meta = document.createElement('meta')
+    meta.name = 'theme-color'
+    document.head.appendChild(meta)
+  }
+  meta.content = color
+}
 
 export type AvatarPreference =
   | { type: 'emoji'; value: string }
@@ -17,6 +38,10 @@ export interface PreferencesContextValue {
   avatar: AvatarPreference;
   setAvatar: (avatar: AvatarPreference) => void;
   resolvedTheme: Theme;
+  customSchemes: CustomColorScheme[];
+  saveCustomScheme: (scheme: CustomColorScheme) => void;
+  deleteCustomScheme: (id: string) => void;
+  applyCustomScheme: (scheme: CustomColorScheme) => void;
 }
 
 interface ThemeContextValue {
@@ -34,11 +59,23 @@ const THEME_IDS = new Set(themes.map((t) => t.id));
 const FONT_IDS = new Set(fontOptions.map((f) => f.id));
 const DEFAULT_AVATAR: AvatarPreference = { type: 'emoji', value: '🐼' };
 
+function getCustomThemeById(id: string): Theme | null {
+  if (!id.startsWith('custom:')) return null
+  const schemeId = id.slice('custom:'.length)
+  const scheme = loadCustomSchemes().find((s) => s.id === schemeId)
+  if (!scheme) return null
+  return { id, name: scheme.name, preview: scheme.primary, custom: true }
+}
+
 function getStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored && THEME_IDS.has(stored)) {
-      return themes.find((t) => t.id === stored) ?? defaultTheme;
+    if (stored) {
+      if (THEME_IDS.has(stored)) {
+        return themes.find((t) => t.id === stored) ?? defaultTheme;
+      }
+      const custom = getCustomThemeById(stored)
+      if (custom) return custom
     }
   } catch {
     // localStorage may be unavailable in some environments
@@ -141,7 +178,13 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [theme, setThemeState] = useState<Theme>(() => {
     const stored = getStoredTheme();
     if (typeof document !== 'undefined') {
-      document.documentElement.dataset.theme = stored.id;
+      if (stored.id.startsWith('custom:')) {
+        const scheme = loadCustomSchemes().find((s) => s.id === stored.id.slice('custom:'.length))
+        if (scheme) applyCustomTheme(scheme)
+        else document.documentElement.dataset.theme = stored.id
+      } else {
+        document.documentElement.dataset.theme = stored.id;
+      }
     }
     return stored;
   });
@@ -154,10 +197,23 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     return stored;
   });
   const [avatar, setAvatarState] = useState<AvatarPreference>(() => getStoredAvatar());
+  const [customSchemes, setCustomSchemesState] = useState<CustomColorScheme[]>(() =>
+    typeof window !== 'undefined' ? loadCustomSchemes() : []
+  );
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.documentElement.dataset.theme = theme.id;
+      if (theme.id.startsWith('custom:')) {
+        const scheme = loadCustomSchemes().find((s) => s.id === theme.id.slice('custom:'.length))
+        if (scheme) {
+          applyCustomTheme(scheme)
+        }
+      } else {
+        clearCustomVars()
+        document.documentElement.dataset.theme = theme.id
+      }
+      // 同步浏览器标签页（地址栏）颜色，确保主题切换后及时更新
+      syncThemeColor()
     }
     try {
       localStorage.setItem(THEME_STORAGE_KEY, theme.id);
@@ -187,7 +243,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   }, [avatar]);
 
   const setTheme = (next: Theme) => {
-    if (THEME_IDS.has(next.id)) {
+    if (THEME_IDS.has(next.id) || next.custom) {
       setThemeState(next);
     }
   };
@@ -207,6 +263,47 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     }
   };
 
+  const saveCustomScheme = (scheme: CustomColorScheme) => {
+    setCustomSchemesState((prev) => {
+      const exists = prev.some((s) => s.id === scheme.id)
+      const next = exists ? prev.map((s) => (s.id === scheme.id ? scheme : s)) : [...prev, scheme]
+      saveCustomSchemes(next)
+      return next
+    })
+  };
+
+  const deleteCustomScheme = (id: string) => {
+    setCustomSchemesState((prev) => {
+      const next = prev.filter((s) => s.id !== id)
+      saveCustomSchemes(next)
+      return next
+    })
+    if (theme.id === `custom:${id}`) {
+      setThemeState(defaultTheme)
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, defaultTheme.id);
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const applyCustomScheme = (scheme: CustomColorScheme) => {
+    applyCustomTheme(scheme)
+    const customTheme: Theme = {
+      id: `custom:${scheme.id}`,
+      name: scheme.name,
+      preview: scheme.primary,
+      custom: true,
+    }
+    setThemeState(customTheme)
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, customTheme.id);
+    } catch {
+      // ignore
+    }
+  };
+
   const value: PreferencesContextValue = {
     theme,
     setTheme,
@@ -215,6 +312,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     avatar,
     setAvatar,
     resolvedTheme: theme,
+    customSchemes,
+    saveCustomScheme,
+    deleteCustomScheme,
+    applyCustomScheme,
   };
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;

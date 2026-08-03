@@ -48,7 +48,7 @@ export class OverstockAnalysisService {
     ]);
 
     this.logger.debug(
-      `压货分析：进货记录 ${purchaseRecords.length} 条，临期原始记录 ${allExpenses.length} 条`,
+      `差异门店分析：进货记录 ${purchaseRecords.length} 条，临期原始记录 ${allExpenses.length} 条`,
     );
 
     const expiryProfileMap = await this.expiryAnalysisService.buildProfileMap();
@@ -68,7 +68,7 @@ export class OverstockAnalysisService {
     this.distributeExpiryAmounts(cohortMap, filteredExpiry);
 
     this.logger.debug(
-      `压货分析：cohort 数 ${cohortMap.size}，筛选后临期记录 ${filteredExpiry.length} 条`,
+      `差异门店分析：cohort 数 ${cohortMap.size}，筛选后临期记录 ${filteredExpiry.length} 条`,
     );
 
     const cohortItems = this.buildCohortItems(cohortMap);

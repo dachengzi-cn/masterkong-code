@@ -261,9 +261,9 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
     setExporting(true);
     try {
       const result = await getOverstockAnalysisExport(filters);
-      const filename = `压货分析_${filters.monthFrom ?? ''}_${filters.monthTo ?? ''}.xlsx`;
+      const filename = `差异门店分析_${filters.monthFrom ?? ''}_${filters.monthTo ?? ''}.xlsx`;
       await downloadOverstockExport(result, filename);
-      toast.success('压货分析导出成功');
+      toast.success('差异门店分析导出成功');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error('Failed to export overstock analysis:', err);
@@ -278,7 +278,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
   return (
     <div className="bg-card border border-border rounded-sm p-5 space-y-5">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-bold text-foreground">压货分析</div>
+        <div className="text-sm font-bold text-foreground">差异门店分析</div>
         <Button
           variant="outline"
           size="sm"
@@ -287,7 +287,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
           disabled={exporting || loading || !hasData}
         >
           <span className="inline-flex items-center justify-center text-base leading-none">⬇️</span>
-          {exporting ? '导出中' : '下载压货分析'}
+          {exporting ? '导出中' : '下载差异门店分析'}
         </Button>
       </div>
 
@@ -362,7 +362,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
 
       {!loading && !hasData && (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          当前筛选条件下无压货分析数据
+          当前筛选条件下无差异门店分析数据
         </div>
       )}
 
@@ -529,7 +529,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
           </div>
 
           <div>
-            <button
+        <button
               onClick={() => setShowCohorts((v) => !v)}
               className="text-xs text-primary hover:underline"
             >
