@@ -136,3 +136,14 @@ export async function getOverstockAnalysisExport(filters: OverstockAnalysisFilte
   });
   return res.data as OverstockAnalysisExportResult;
 }
+
+export async function getAvailableFilters(): Promise<{
+  months: string[];
+  specifications: string[];
+}> {
+  const res = await axiosForBackend({
+    url: '/api/expenses/available-filters',
+    method: 'GET',
+  });
+  return res.data as { months: string[]; specifications: string[] };
+}

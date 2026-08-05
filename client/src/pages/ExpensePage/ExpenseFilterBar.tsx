@@ -22,10 +22,11 @@ interface ExpenseFilterBarProps {
   options: CombinedFilterOptions;
   onChange: (filters: ExpenseOverviewFilters) => void;
   onReset: () => void;
-  onExport: () => void;
   onConfirm: () => void;
-  exportDisabled: boolean;
+  onExport?: () => void;
   canConfirm: boolean;
+  loading?: boolean;
+  exportDisabled?: boolean;
 }
 
 const ExpenseFilterBar: React.FC<ExpenseFilterBarProps> = ({
@@ -33,10 +34,11 @@ const ExpenseFilterBar: React.FC<ExpenseFilterBarProps> = ({
   options,
   onChange,
   onReset,
-  onExport,
   onConfirm,
-  exportDisabled,
+  onExport,
   canConfirm,
+  loading = false,
+  exportDisabled = false,
 }) => {
   const updateArray = (
     key: keyof ExpenseOverviewFilters,
@@ -146,24 +148,25 @@ const ExpenseFilterBar: React.FC<ExpenseFilterBarProps> = ({
       </div>
 
       <div className="flex items-center justify-end gap-2 mt-3">
+        {onExport && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onExport}
+            disabled={exportDisabled}
+            className="h-6 px-3 text-xs"
+          >
+            导出
+          </Button>
+        )}
         <Button
           size="sm"
           variant="default"
           onClick={onConfirm}
-          disabled={!canConfirm}
+          disabled={loading}
           className="h-6 px-3 text-xs"
         >
-          确认筛选
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={onExport}
-          disabled={exportDisabled}
-          className="h-6 px-2 text-xs gap-1"
-        >
-          <span className="inline-flex items-center justify-center text-base leading-none" >⬇️</span>
-          导出报告
+          {loading ? '生成中…' : '确认查询'}
         </Button>
       </div>
     </FilterBar>

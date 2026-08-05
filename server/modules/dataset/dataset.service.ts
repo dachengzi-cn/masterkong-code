@@ -91,6 +91,11 @@ export class DatasetService implements OnModuleInit {
   /**
    * 获取最新数据集的进货记录，按 (customerCode, specification, purchaseMonth) 聚合。
    * 供其他模块（如差异门店分析）在内存/DB 模式下复用。
+   *
+   * 数据口径：生产力数据仅取「一阶回单」sheet 页的记录，进货金额来自「回单金额」字段、
+   * 进货数量来自「订单数量-不含促销」字段（上传时由「回单数量-不含促销」列名归一化而来）；
+   * 不使用其他 sheet 页（一阶订单/二阶订单/二阶回单）或「订单金额」等字段。
+   * 当数据集中不存在「一阶回单」记录时，回退到字段名自动探测逻辑以兼容普通数据集。
    */
   static async getLatestDatasetPurchaseRecords(): Promise<
     Array<{
@@ -98,6 +103,7 @@ export class DatasetService implements OnModuleInit {
       specification: string;
       purchaseMonth: string;
       purchaseAmount: number;
+      purchaseQuantity: number;
       salesRep?: string;
       region?: string;
     }>
@@ -147,6 +153,7 @@ export class DatasetService implements OnModuleInit {
         specification: string;
         purchaseMonth: string;
         purchaseAmount: number;
+        purchaseQuantity: number;
         salesRep?: string;
         region?: string;
       }>,
@@ -155,6 +162,7 @@ export class DatasetService implements OnModuleInit {
       specification: string;
       purchaseMonth: string;
       purchaseAmount: number;
+      purchaseQuantity: number;
       salesRep?: string;
       region?: string;
     }> => {
@@ -165,6 +173,7 @@ export class DatasetService implements OnModuleInit {
           specification: string;
           purchaseMonth: string;
           purchaseAmount: number;
+          purchaseQuantity: number;
           salesRep?: string;
           region?: string;
         }
@@ -174,6 +183,7 @@ export class DatasetService implements OnModuleInit {
         const existing = map.get(key);
         if (existing) {
           existing.purchaseAmount += r.purchaseAmount;
+          existing.purchaseQuantity += r.purchaseQuantity;
         } else {
           map.set(key, { ...r });
         }
@@ -197,12 +207,20 @@ export class DatasetService implements OnModuleInit {
       let codeField = self.findCustomerCodeField(fields);
       let dateField = self.findDateField(fields);
       const specField = self.findSpecificationField(fields);
-      const amountField = self.findAmountField(fields);
       const salesRepField = fields.find((f: FieldConfig) => f.name === '人员-业代')?.name;
       const regionField = fields.find((f: FieldConfig) => f.name === '组织-营业所')?.name;
 
-      if (memDataset.records.length > 0) {
-        const sampleKeys = Object.keys(memDataset.records[0] ?? {});
+      // 优先采用「一阶回单」sheet 页数据（回单金额/订单数量-不含促销），否则回退到字段自动探测
+      const tier1ReturnRecords = memDataset.records.filter(
+        (r) => String(r['_sheetType'] ?? '') === '一阶回单',
+      );
+      const useTier1Return = tier1ReturnRecords.length > 0;
+      const amountField = useTier1Return ? '回单金额' : self.findAmountField(fields);
+      const quantityField = useTier1Return ? '订单数量-不含促销' : undefined;
+      const recordsToProcess = useTier1Return ? tier1ReturnRecords : memDataset.records;
+
+      if (recordsToProcess.length > 0) {
+        const sampleKeys = Object.keys(recordsToProcess[0] ?? {});
         if (codeField && !sampleKeys.includes(codeField)) {
           const fallbackCode =
             sampleKeys.find((k: string) => /客户.*编码|customer.*code|编码/i.test(k.toLowerCase())) ??
@@ -223,11 +241,12 @@ export class DatasetService implements OnModuleInit {
         specification: string;
         purchaseMonth: string;
         purchaseAmount: number;
+        purchaseQuantity: number;
         salesRep?: string;
         region?: string;
       }> = [];
 
-      for (const record of memDataset.records) {
+      for (const record of recordsToProcess) {
         if (!record || typeof record !== 'object') continue;
         const hash = createHash('md5').update(JSON.stringify(record)).digest('hex');
         if (seenHashes.has(hash)) continue;
@@ -247,8 +266,9 @@ export class DatasetService implements OnModuleInit {
           specification: rawSpec,
           purchaseMonth,
           purchaseAmount: parseAmount(record[amountField ?? ''] ?? 0),
+          purchaseQuantity: parseAmount(record[quantityField ?? ''] ?? 0),
           salesRep: salesRepField ? String(record[salesRepField] ?? '').trim() || undefined : undefined,
-          region: regionField ? String(record[regionField] ?? '').trim() || undefined : undefined,
+          region: regionField ? String(record[regionField ?? ''] ?? '').trim() || undefined : undefined,
         });
       }
 
@@ -279,9 +299,21 @@ export class DatasetService implements OnModuleInit {
       let codeField = self.findCustomerCodeField(fields);
       let dateField = self.findDateField(fields);
       const specField = self.findSpecificationField(fields);
-      const amountField = self.findAmountField(fields);
       const salesRepField = fields.find((f: FieldConfig) => f.name === '人员-业代')?.name;
       const regionField = fields.find((f: FieldConfig) => f.name === '组织-营业所')?.name;
+
+      // 优先采用「一阶回单」sheet 页数据（回单金额/订单数量-不含促销），否则回退到字段自动探测
+      const tier1Check = await self.db.execute(
+        sql.raw(
+          "SELECT COUNT(*)::int AS cnt FROM data_record WHERE dataset_id = '" +
+            String(dsId).replace(/'/g, "''") +
+            "' AND content->>'_sheetType' = '一阶回单' AND content_hash IS NOT NULL",
+        ),
+      );
+      const tier1Count = Number((tier1Check[0] as { cnt?: number | string })?.cnt ?? 0);
+      const useTier1Return = tier1Count > 0;
+      const amountField = useTier1Return ? '回单金额' : self.findAmountField(fields);
+      const quantityField = useTier1Return ? '订单数量-不含促销' : undefined;
 
       const sampleResult = await self.db.execute(
         sql.raw(
@@ -313,6 +345,7 @@ export class DatasetService implements OnModuleInit {
       const safeDateField = (dateField ?? '订单-订单日期').replace(/'/g, "''");
       const safeSpecField = (specField ?? '产品-规格').replace(/'/g, "''");
       const safeAmountField = amountField ? amountField.replace(/'/g, "''") : null;
+      const safeQuantityField = quantityField ? quantityField.replace(/'/g, "''") : null;
       const safeSalesRepField = salesRepField ? salesRepField.replace(/'/g, "''") : null;
       const safeRegionField = regionField ? regionField.replace(/'/g, "''") : null;
 
@@ -329,14 +362,19 @@ export class DatasetService implements OnModuleInit {
         safeSpecField +
         "', '') as specification" +
         (safeAmountField ? ", NULLIF(content->>'" + safeAmountField + "', '')::numeric as amount" : '') +
+        (safeQuantityField
+          ? ", NULLIF(content->>'" + safeQuantityField + "', '')::numeric as quantity"
+          : '') +
         (safeSalesRepField ? ", content->>'" + safeSalesRepField + "' as sales_rep" : '') +
         (safeRegionField ? ", content->>'" + safeRegionField + "' as region" : '') +
         ' FROM data_record WHERE dataset_id = \'' +
         String(dsId).replace(/'/g, "''") +
         '\' AND content_hash IS NOT NULL' +
+        (useTier1Return ? " AND content->>'_sheetType' = '一阶回单'" : '') +
         ' ORDER BY content_hash, _created_at' +
         ') SELECT customer_code, trans_date, specification' +
         (safeAmountField ? ', amount' : '') +
+        (safeQuantityField ? ', quantity' : '') +
         (safeSalesRepField ? ', sales_rep' : '') +
         (safeRegionField ? ', region' : '') +
         ' FROM deduped';
@@ -346,6 +384,7 @@ export class DatasetService implements OnModuleInit {
         trans_date: string;
         specification: string;
         amount?: string | number;
+        quantity?: string | number;
         sales_rep?: string;
         region?: string;
       }>;
@@ -355,6 +394,7 @@ export class DatasetService implements OnModuleInit {
         specification: string;
         purchaseMonth: string;
         purchaseAmount: number;
+        purchaseQuantity: number;
         salesRep?: string;
         region?: string;
       }> = [];
@@ -369,6 +409,7 @@ export class DatasetService implements OnModuleInit {
           specification,
           purchaseMonth,
           purchaseAmount: parseAmount(row.amount ?? 0),
+          purchaseQuantity: parseAmount(row.quantity ?? 0),
           salesRep: row.sales_rep ? String(row.sales_rep).trim() || undefined : undefined,
           region: row.region ? String(row.region).trim() || undefined : undefined,
         });

@@ -711,6 +711,7 @@ export interface OverstockStoreRiskItem {
   business: string;
   salesRep: string;
   purchaseAmount: number;
+  purchaseQuantity: number;
   expiryAmount: number;
   conversionRate: number;
   isFlagged: boolean;
@@ -721,6 +722,7 @@ export interface OverstockRepRiskItem {
   region: string;
   storeCount: number;
   purchaseAmount: number;
+  purchaseQuantity: number;
   expiryAmount: number;
   conversionRate: number;
   isFlagged: boolean;
@@ -729,6 +731,7 @@ export interface OverstockRepRiskItem {
 export interface OverstockSpecRiskItem {
   specification: string;
   purchaseAmount: number;
+  purchaseQuantity: number;
   expiryAmount: number;
   conversionRate: number;
 }
@@ -742,10 +745,52 @@ export interface OverstockCohortItem {
   specification: string;
   purchaseMonth: string;
   purchaseAmount: number;
+  purchaseQuantity: number;
   expiryMonth4Amount: number;
   expiryMonth5Amount: number;
   expiryAmount: number;
   conversionRate: number;
+}
+
+/** 总进货金额下钻：单条明细（某临期月 → 某偏移进货月 的门店/规格进货金额） */
+export interface OverstockPurchaseDrilldownItem {
+  /** 临期发生月（筛选月） */
+  expiryMonth: string;
+  /** 对应的进货月（临期月往前偏移 offset 个月） */
+  purchaseMonth: string;
+  /** 偏移月数：4 或 5 */
+  offset: number;
+  customerCode: string;
+  customerName: string;
+  region: string;
+  business: string;
+  salesRep: string;
+  specification: string;
+  /** 该门店该规格在该进货月的进货金额 */
+  purchaseAmount: number;
+  /** 该门店该规格在该进货月的进货数量 */
+  purchaseQuantity: number;
+  /** 该进货批次对应的临期金额 */
+  expiryAmount: number;
+}
+
+/** 总进货金额下钻：按「进货月」分组的汇总 */
+export interface OverstockPurchaseDrilldownGroup {
+  expiryMonth: string;
+  purchaseMonth: string;
+  offset: number;
+  purchaseAmount: number;
+  purchaseQuantity: number;
+  expiryAmount: number;
+  storeCount: number;
+  itemCount: number;
+  items: OverstockPurchaseDrilldownItem[];
+}
+
+export interface OverstockPurchaseDrilldown {
+  totalPurchaseAmount: number;
+  totalPurchaseQuantity: number;
+  groups: OverstockPurchaseDrilldownGroup[];
 }
 
 export interface OverstockAnalysisResult {
@@ -757,6 +802,8 @@ export interface OverstockAnalysisResult {
     flaggedRepCount: number;
     threshold: number;
   };
+  /** 总进货金额下钻明细（按偏移 -4/-5 的进货月分组） */
+  purchaseDrilldown: OverstockPurchaseDrilldown;
   storeRisks: OverstockStoreRiskItem[];
   repRisks: OverstockRepRiskItem[];
   specRisks: OverstockSpecRiskItem[];

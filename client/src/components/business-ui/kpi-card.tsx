@@ -13,6 +13,10 @@ export interface KpiCardProps {
   variant?: KpiVariant;
   loading?: boolean;
   className?: string;
+  /** 传入后卡片可点击（用于数据下钻） */
+  onClick?: () => void;
+  /** 可点击卡片的无障碍描述 */
+  ariaLabel?: string;
 }
 
 const lineColorClass: Record<KpiVariant, string> = {
@@ -31,11 +35,31 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   variant = 'primary',
   loading = false,
   className,
+  onClick,
+  ariaLabel,
 }) => {
+  const clickable = typeof onClick === 'function';
+
   return (
     <div
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-label={clickable ? (ariaLabel ?? label) : undefined}
+      onClick={clickable ? onClick : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
       className={cn(
         'bg-card border border-border rounded-sm p-4 relative overflow-hidden',
+        clickable &&
+          'cursor-pointer transition-colors duration-150 ease-out hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2',
         className,
       )}
     >

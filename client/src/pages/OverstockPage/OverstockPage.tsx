@@ -36,6 +36,11 @@ const defaultOverstockResult: OverstockAnalysisResult = {
     flaggedRepCount: 0,
     threshold: 0,
   },
+  purchaseDrilldown: {
+    totalPurchaseAmount: 0,
+    totalPurchaseQuantity: 0,
+    groups: [],
+  },
   storeRisks: [],
   repRisks: [],
   specRisks: [],
@@ -69,6 +74,7 @@ const OverstockPage: React.FC = () => {
     monthTo: getCurrentMonth(),
   }));
   const [confirmedFilters, setConfirmedFilters] = useState<ExpenseOverviewFilters>({});
+  const [filterReady, setFilterReady] = useState(false);
 
   const [data, setData] = useState<OverstockAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -84,6 +90,10 @@ const OverstockPage: React.FC = () => {
     salesReps: [],
     specifications: [],
   });
+  const [expenseAvailableFilters, setExpenseAvailableFilters] = useState<{
+    months: string[];
+    specifications: string[];
+  }>({ months: [], specifications: [] });
 
   // Load ATP filter options (regions and sales reps)
   useEffect(() => {
@@ -94,6 +104,32 @@ const OverstockPage: React.FC = () => {
         logger.error('Failed to load ATP filter options:', err),
       );
   }, []);
+
+  // Load expense analysis filter options (months, specifications) independently so dropdowns
+  // are populated on first render even before a query is confirmed
+  useEffect(() => {
+    expenseApi
+      .getAvailableFilters()
+      .then((result) => setExpenseAvailableFilters(result))
+      .catch((err: unknown) =>
+        logger.error('Failed to load expense filter options:', err),
+      );
+  }, []);
+
+  // 选项加载完成后，将默认年月对齐到可选范围内的最新月份（数据不含当月时回退），
+  // 确保 Select 的受控 value 始终存在于选项中，下拉初次即可正常选择
+  const didAlignMonthRef = useRef(false);
+  useEffect(() => {
+    if (didAlignMonthRef.current) return;
+    const months = expenseAvailableFilters.months;
+    if (!months.length) return;
+    didAlignMonthRef.current = true;
+    const current = getCurrentMonth();
+    const target = months.includes(current)
+      ? current
+      : months[months.length - 1];
+    setPendingFilters((prev) => ({ ...prev, monthFrom: target, monthTo: target }));
+  }, [expenseAvailableFilters.months]);
 
   // Cascading update: region -> salesReps
   useEffect(() => {
@@ -161,11 +197,14 @@ const OverstockPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [confirmedFilters]);
+  }, [confirmedFilters, filterReady]);
 
+  // Only fire a query when the user has explicitly confirmed/reset filters
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (filterReady) {
+      fetchData();
+    }
+  }, [filterReady, confirmedFilters, fetchData]);
 
   const canConfirm = useMemo(
     () => !!pendingFilters.monthFrom && !!pendingFilters.monthTo,
@@ -173,22 +212,14 @@ const OverstockPage: React.FC = () => {
   );
 
   const handleConfirm = useCallback(() => {
-    if (!canConfirm) return;
+    if (!canConfirm) {
+      toast.warning('请先配置完整的筛选条件（年月区间）后再确认查询');
+      return;
+    }
     setConfirmedFilters({ ...pendingFilters });
+    setFilterReady(true);
     setHasConfirmedOnce(true);
   }, [canConfirm, pendingFilters]);
-
-  // Auto-confirm initial pending filters so the page loads data on first visit
-  useEffect(() => {
-    if (
-      !hasConfirmedOnce &&
-      canConfirm &&
-      (!confirmedFilters.monthFrom || !confirmedFilters.monthTo)
-    ) {
-      setConfirmedFilters({ ...pendingFilters });
-      setHasConfirmedOnce(true);
-    }
-  }, [canConfirm, confirmedFilters, hasConfirmedOnce, pendingFilters]);
 
   const handleReset = useCallback(() => {
     const currentMonth = getCurrentMonth();
@@ -200,6 +231,7 @@ const OverstockPage: React.FC = () => {
       monthFrom: currentMonth,
       monthTo: currentMonth,
     });
+    setFilterReady(true);
     setHasConfirmedOnce(true);
     hasAdjustedMonthRef.current = false;
   }, []);
@@ -215,7 +247,10 @@ const OverstockPage: React.FC = () => {
       months: [],
     };
     return {
-      months: overstockFilters.months,
+      months:
+        overstockFilters.months.length > 0
+          ? overstockFilters.months
+          : expenseAvailableFilters.months,
       regions: unionUnique(
         overstockFilters.regions,
         atpFilterOptions.regions,
@@ -229,7 +264,9 @@ const OverstockPage: React.FC = () => {
         atpFilterOptions.dealerTypes,
       ),
       specifications: unionUnique(
-        overstockFilters.specifications,
+        overstockFilters.specifications.length
+          ? overstockFilters.specifications
+          : expenseAvailableFilters.specifications,
         atpFilterOptions.specifications,
       ),
       businesses: overstockFilters.businesses,
@@ -239,7 +276,7 @@ const OverstockPage: React.FC = () => {
       ),
       compositeFormats: [],
     };
-  }, [data?.availableFilters, atpFilterOptions]);
+  }, [data?.availableFilters, atpFilterOptions, expenseAvailableFilters]);
 
   const hasAnyData = useMemo(() => {
     return (data?.cohorts?.length ?? 0) > 0;
@@ -261,6 +298,7 @@ const OverstockPage: React.FC = () => {
           '规格',
           '进货月',
           '进货金额',
+          '进货数量',
           '第4月临期额',
           '第5月临期额',
           '临期金额',
@@ -272,6 +310,7 @@ const OverstockPage: React.FC = () => {
           c.specification,
           c.purchaseMonth,
           c.purchaseAmount,
+          c.purchaseQuantity,
           c.expiryMonth4Amount,
           c.expiryMonth5Amount,
           c.expiryAmount,
@@ -283,6 +322,7 @@ const OverstockPage: React.FC = () => {
         { wch: 16 },
         { wch: 20 },
         { wch: 30 },
+        { wch: 12 },
         { wch: 12 },
         { wch: 12 },
         { wch: 14 },
@@ -323,6 +363,38 @@ const OverstockPage: React.FC = () => {
     );
   }
 
+  if (!hasConfirmedOnce && !loading) {
+    return (
+      <div className="mx-auto max-w-[1400px] space-y-4 px-6 py-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-base font-bold text-foreground">差异门店分析</h1>
+        </div>
+
+        <ExpenseFilterBar
+          filters={pendingFilters}
+          options={filterOptions}
+          onChange={setPendingFilters}
+          onReset={handleReset}
+          onExport={handleExport}
+          onConfirm={handleConfirm}
+          canConfirm={canConfirm}
+          loading={loading}
+          exportDisabled={loading || !hasAnyData}
+        />
+
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Empty className="border-none">
+            <EmptyHeader>
+              <EmptyMedia variant="emoji">🔍</EmptyMedia>
+              <EmptyTitle>尚未生成分析结果</EmptyTitle>
+              <EmptyDescription>请完成筛选条件配置后，点击「确认查询」生成差异门店分析数据</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-4 px-6 py-6">
       <div className="flex items-center justify-between">
@@ -337,6 +409,7 @@ const OverstockPage: React.FC = () => {
         onExport={handleExport}
         onConfirm={handleConfirm}
         canConfirm={canConfirm}
+        loading={loading}
         exportDisabled={loading || !hasAnyData}
       />
 

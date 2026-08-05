@@ -12,6 +12,7 @@ import type {
 } from '@shared/api.interface';
 import type { ExpenseOverviewFilters } from '../ExpensePage/expense-overview.types';
 import { formatCurrency, formatPercent } from '../ExpensePage/expense-overview.utils';
+import OverstockPurchaseDrilldown from './OverstockPurchaseDrilldown';
 
 interface OverstockAnalysisPanelProps {
   data: OverstockAnalysisResult | null;
@@ -25,7 +26,7 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 const EmptyRow: React.FC = () => (
   <tr>
-    <td colSpan={8} className="px-2 py-8 text-center text-xs text-muted-foreground">
+    <td colSpan={9} className="px-2 py-8 text-center text-xs text-muted-foreground">
       暂无数据
     </td>
   </tr>
@@ -114,13 +115,14 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
 
   // 风险门店
   const storeRows = [
-    ['门店编码', '门店名称', '所别', '业代', '进货金额', '临期金额', '转化率', '是否标记'],
+    ['门店编码', '门店名称', '所别', '业代', '进货金额', '进货数量', '临期金额', '转化率', '是否标记'],
     ...result.storeRisks.map((r) => [
       r.customerCode,
       r.customerName,
       r.region,
       r.salesRep,
       r.purchaseAmount,
+      r.purchaseQuantity,
       r.expiryAmount,
       r.conversionRate,
       r.isFlagged ? '是' : '否',
@@ -135,6 +137,7 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
       { wch: 14 },
       { wch: 14 },
       { wch: 12 },
+      { wch: 12 },
       { wch: 14 },
       { wch: 12 },
       { wch: 12 },
@@ -143,12 +146,13 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
 
   // 风险业代
   const repRows = [
-    ['业代', '所别', '负责门店数', '进货金额', '临期金额', '转化率', '是否标记'],
+    ['业代', '所别', '负责门店数', '进货金额', '进货数量', '临期金额', '转化率', '是否标记'],
     ...result.repRisks.map((r) => [
       r.salesRep,
       r.region,
       r.storeCount,
       r.purchaseAmount,
+      r.purchaseQuantity,
       r.expiryAmount,
       r.conversionRate,
       r.isFlagged ? '是' : '否',
@@ -159,6 +163,7 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
     { wch: 14 },
     { wch: 12 },
     { wch: 12 },
+    { wch: 12 },
     { wch: 14 },
     { wch: 12 },
     { wch: 12 },
@@ -166,10 +171,10 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
 
   // 规格风险
   const specRows = [
-    ['规格', '进货金额', '临期金额', '转化率'],
-    ...result.specRisks.map((r) => [r.specification, r.purchaseAmount, r.expiryAmount, r.conversionRate]),
+    ['规格', '进货金额', '进货数量', '临期金额', '转化率'],
+    ...result.specRisks.map((r) => [r.specification, r.purchaseAmount, r.purchaseQuantity, r.expiryAmount, r.conversionRate]),
   ];
-  addSheet('规格风险', specRows, [{ wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 12 }]);
+  addSheet('规格风险', specRows, [{ wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }]);
 
   // Cohort 明细
   const cohortRows = [
@@ -179,6 +184,7 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
       '规格',
       '进货月',
       '进货金额',
+      '进货数量',
       '第4月临期额',
       '第5月临期额',
       '临期金额',
@@ -190,6 +196,7 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
       c.specification,
       c.purchaseMonth,
       c.purchaseAmount,
+      c.purchaseQuantity,
       c.expiryMonth4Amount,
       c.expiryMonth5Amount,
       c.expiryAmount,
@@ -202,6 +209,7 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
     { wch: 30 },
     { wch: 12 },
     { wch: 12 },
+    { wch: 12 },
     { wch: 14 },
     { wch: 14 },
     { wch: 14 },
@@ -212,10 +220,10 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
   const percentStyle = { z: '0.00%' };
   const percentSheets: Record<string, number[]> = {
     汇总: [1],
-    风险门店: [6],
-    风险业代: [5],
-    规格风险: [3],
-    Cohort明细: [8],
+    风险门店: [7],
+    风险业代: [6],
+    规格风险: [4],
+    Cohort明细: [9],
   };
   wb.SheetNames.forEach((sheetName: string) => {
     const ws = wb.Sheets[sheetName];
@@ -246,6 +254,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
 }) => {
   const [exporting, setExporting] = useState(false);
   const [showCohorts, setShowCohorts] = useState(false);
+  const [showPurchaseDrilldown, setShowPurchaseDrilldown] = useState(false);
 
   const summary = data?.summary ?? {
     totalPurchaseAmount: 0,
@@ -296,6 +305,13 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
           label="总进货金额"
           icon="🛒"
           loading={loading}
+          onClick={loading ? undefined : () => setShowPurchaseDrilldown((v) => !v)}
+          ariaLabel="总进货金额，点击查看进货金额下钻明细"
+          subText={
+            <span className="text-primary">
+              {showPurchaseDrilldown ? '收起明细 ↑' : '点击下钻明细 ↓'}
+            </span>
+          }
           value={
             <CountUp
               end={summary.totalPurchaseAmount}
@@ -360,6 +376,13 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
         />
       </div>
 
+      {!loading && showPurchaseDrilldown && (
+        <OverstockPurchaseDrilldown
+          data={data?.purchaseDrilldown ?? null}
+          onClose={() => setShowPurchaseDrilldown(false)}
+        />
+      )}
+
       {!loading && !hasData && (
         <div className="py-8 text-center text-sm text-muted-foreground">
           当前筛选条件下无差异门店分析数据
@@ -379,6 +402,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                     <th className="px-2 py-2 text-left font-medium">所别</th>
                     <th className="px-2 py-2 text-left font-medium">业代</th>
                     <th className="px-2 py-2 text-right font-medium">进货金额</th>
+                    <th className="px-2 py-2 text-right font-medium">进货数量</th>
                     <th className="px-2 py-2 text-right font-medium">临期金额</th>
                     <th className="px-2 py-2 text-right font-medium">转化率</th>
                     <th className="px-2 py-2 text-center font-medium">标记</th>
@@ -400,6 +424,9 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                       <td className="px-2 py-2">{row.salesRep}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">
                         {formatCurrency(row.purchaseAmount)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">
+                        {row.purchaseQuantity.toLocaleString('zh-CN')}
                       </td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums text-[hsl(217,85%,52%)]">
                         {formatCurrency(row.expiryAmount)}
@@ -435,6 +462,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                       <th className="px-2 py-2 text-left font-medium">所别</th>
                       <th className="px-2 py-2 text-right font-medium">门店数</th>
                       <th className="px-2 py-2 text-right font-medium">进货金额</th>
+                      <th className="px-2 py-2 text-right font-medium">进货数量</th>
                       <th className="px-2 py-2 text-right font-medium">临期金额</th>
                       <th className="px-2 py-2 text-right font-medium">转化率</th>
                       <th className="px-2 py-2 text-center font-medium">标记</th>
@@ -453,6 +481,9 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                         <td className="px-2 py-2 text-right font-mono tabular-nums">{row.storeCount}</td>
                         <td className="px-2 py-2 text-right font-mono tabular-nums">
                           {formatCurrency(row.purchaseAmount)}
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono tabular-nums">
+                          {row.purchaseQuantity.toLocaleString('zh-CN')}
                         </td>
                         <td className="px-2 py-2 text-right font-mono tabular-nums text-[hsl(217,85%,52%)]">
                           {formatCurrency(row.expiryAmount)}
@@ -473,7 +504,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                     ))}
                     {data.repRisks.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-2 py-8 text-center text-xs text-muted-foreground">
+                        <td colSpan={8} className="px-2 py-8 text-center text-xs text-muted-foreground">
                           暂无数据
                         </td>
                       </tr>
@@ -491,6 +522,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                     <tr className="bg-accent/30 border-b border-border">
                       <th className="px-2 py-2 text-left font-medium">规格</th>
                       <th className="px-2 py-2 text-right font-medium">进货金额</th>
+                      <th className="px-2 py-2 text-right font-medium">进货数量</th>
                       <th className="px-2 py-2 text-right font-medium">临期金额</th>
                       <th className="px-2 py-2 text-right font-medium">转化率</th>
                     </tr>
@@ -507,6 +539,9 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                         <td className="px-2 py-2 text-right font-mono tabular-nums">
                           {formatCurrency(row.purchaseAmount)}
                         </td>
+                        <td className="px-2 py-2 text-right font-mono tabular-nums">
+                          {row.purchaseQuantity.toLocaleString('zh-CN')}
+                        </td>
                         <td className="px-2 py-2 text-right font-mono tabular-nums text-[hsl(217,85%,52%)]">
                           {formatCurrency(row.expiryAmount)}
                         </td>
@@ -517,7 +552,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                     ))}
                     {data.specRisks.length === 0 && (
                       <tr>
-                        <td colSpan={4} className="px-2 py-8 text-center text-xs text-muted-foreground">
+                        <td colSpan={5} className="px-2 py-8 text-center text-xs text-muted-foreground">
                           暂无数据
                         </td>
                       </tr>
@@ -545,6 +580,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                       <th className="px-2 py-2 text-left font-medium">规格</th>
                       <th className="px-2 py-2 text-left font-medium">进货月</th>
                       <th className="px-2 py-2 text-right font-medium">进货金额</th>
+                      <th className="px-2 py-2 text-right font-medium">进货数量</th>
                       <th className="px-2 py-2 text-right font-medium">第4月临期额</th>
                       <th className="px-2 py-2 text-right font-medium">第5月临期额</th>
                       <th className="px-2 py-2 text-right font-medium">临期金额</th>
@@ -567,6 +603,9 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
                         <td className="px-2 py-2">{row.purchaseMonth}</td>
                         <td className="px-2 py-2 text-right font-mono tabular-nums">
                           {formatCurrency(row.purchaseAmount)}
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono tabular-nums">
+                          {row.purchaseQuantity.toLocaleString('zh-CN')}
                         </td>
                         <td className="px-2 py-2 text-right font-mono tabular-nums">
                           {formatCurrency(row.expiryMonth4Amount)}

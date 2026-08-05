@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { toast } from 'sonner';
@@ -58,17 +58,24 @@ function getCurrentMonth(): string {
 const ExpiryExpensePage: React.FC = () => {
   const navigate = useNavigate();
   const [data, setData] = useState<ExpiryAnalysisResult | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ExpiryAnalysisFilters>(() => ({
     monthFrom: getCurrentMonth(),
     monthTo: getCurrentMonth(),
     amountThreshold: 500,
   }));
+  const [confirmedFilters, setConfirmedFilters] = useState<ExpiryAnalysisFilters>({});
+  const [filterReady, setFilterReady] = useState(false);
+  const [hasConfirmedOnce, setHasConfirmedOnce] = useState(false);
   const [hasExpenseData, setHasExpenseData] = useState(true);
   const [activeDrilldown, setActiveDrilldown] = useState<'store' | 'spec' | null>(null);
   const [drilldownData, setDrilldownData] = useState<ExpiryDrilldownResult | null>(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
+  const [availableFilters, setAvailableFilters] = useState<{
+    months: string[];
+    specifications: string[];
+  }>({ months: [], specifications: [] });
 
   // 为 AI 分析准备输入数据
   const aiInputData = useMemo(() => {
@@ -96,7 +103,7 @@ const ExpiryExpensePage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await expenseApi.getExpiryAnalysis(filters);
+      const result = await expenseApi.getExpiryAnalysis(confirmedFilters);
       setData(result);
       setHasExpenseData(
         result.availableFilters.months.length > 0 ||
@@ -111,11 +118,52 @@ const ExpiryExpensePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [confirmedFilters]);
 
+  // Only fire a query when the user has explicitly confirmed/reset filters
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (filterReady) {
+      fetchData();
+    }
+  }, [filterReady, confirmedFilters, fetchData]);
+
+  // 初始化加载下拉筛选项（月份、规格），独立于主分析查询，确保页面渲染即填充
+  useEffect(() => {
+    expenseApi
+      .getAvailableFilters()
+      .then((result) => setAvailableFilters(result))
+      .catch((err: unknown) => logger.error('Failed to load expiry filter options:', err));
+  }, []);
+
+  // 选项加载完成后，将默认年月对齐到可选范围内的最新月份（数据不含当月时回退），
+  // 确保 Select 的受控 value 始终存在于选项中，下拉初次即可正常选择
+  const didAlignMonthRef = useRef(false);
+  useEffect(() => {
+    if (didAlignMonthRef.current) return;
+    const months = availableFilters.months;
+    if (!months.length) return;
+    didAlignMonthRef.current = true;
+    const current = getCurrentMonth();
+    const target = months.includes(current)
+      ? current
+      : months[months.length - 1];
+    setFilters((prev) => ({ ...prev, monthFrom: target, monthTo: target }));
+  }, [availableFilters.months]);
+
+  const canConfirm = useMemo(
+    () => !!filters.monthFrom && !!filters.monthTo,
+    [filters.monthFrom, filters.monthTo],
+  );
+
+  const handleConfirm = useCallback(() => {
+    if (!canConfirm) {
+      toast.warning('请先配置完整的筛选条件（年月区间）后再确认查询');
+      return;
+    }
+    setConfirmedFilters({ ...filters });
+    setFilterReady(true);
+    setHasConfirmedOnce(true);
+  }, [canConfirm, filters]);
 
   useEffect(() => {
     if (!activeDrilldown) return;
@@ -139,11 +187,15 @@ const ExpiryExpensePage: React.FC = () => {
 
   const handleReset = useCallback(() => {
     const currentMonth = getCurrentMonth();
-    setFilters({
+    const resetFilters: ExpiryAnalysisFilters = {
       monthFrom: currentMonth,
       monthTo: currentMonth,
       amountThreshold: 500,
-    });
+    };
+    setFilters(resetFilters);
+    setConfirmedFilters(resetFilters);
+    setFilterReady(true);
+    setHasConfirmedOnce(true);
     setActiveDrilldown(null);
     setDrilldownData(null);
   }, []);
@@ -221,7 +273,7 @@ const ExpiryExpensePage: React.FC = () => {
     }
   }, [data, loading]);
 
-  if (!hasExpenseData && !loading && !error) {
+  if (!hasExpenseData && !loading && !error && hasConfirmedOnce) {
     return (
       <div className="mx-auto max-w-[1400px] px-6 py-6">
         <div className="flex items-center justify-center min-h-[60vh]">
@@ -242,6 +294,64 @@ const ExpiryExpensePage: React.FC = () => {
 
   const displayData = data ?? defaultResult;
 
+  // 下拉选项：优先使用查询结果中的可用筛选项，初始化时由独立接口填充兜底
+  const filterOptions = useMemo(
+    () => ({
+      months: displayData.availableFilters.months.length
+        ? displayData.availableFilters.months
+        : availableFilters.months,
+      specifications: displayData.availableFilters.specifications.length
+        ? displayData.availableFilters.specifications
+        : availableFilters.specifications,
+      regions: displayData.availableFilters.regions,
+      tiers: displayData.availableFilters.tiers,
+      businesses: displayData.availableFilters.businesses,
+      dealerTypes: displayData.availableFilters.dealerTypes,
+    }),
+    [displayData.availableFilters, availableFilters],
+  );
+
+  if (!hasConfirmedOnce && !loading) {
+    return (
+      <div className="mx-auto max-w-[1400px] space-y-4 px-6 py-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-base font-bold text-foreground">临期费用分析</h1>
+        </div>
+
+        <ExpiryFilterBar
+          filters={filters}
+          options={filterOptions}
+          onChange={setFilters}
+          onReset={handleReset}
+          onExport={handleExport}
+          onConfirm={handleConfirm}
+          canConfirm={canConfirm}
+          loading={loading}
+          exportDisabled={loading || !data || displayData.kpis.totalAmount === 0}
+          rightActions={
+            <AiAnalysisPanel
+              pageScope="expiry"
+              inputData={aiInputData}
+              defaultQuestion="请分析当前临期费用数据，识别费用趋势、区域分布与高风险规格/门店。"
+              disabled={!data || loading}
+              size="sm"
+            />
+          }
+        />
+
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Empty className="border-none">
+            <EmptyHeader>
+              <EmptyMedia variant="emoji">🔍</EmptyMedia>
+              <EmptyTitle>尚未生成分析结果</EmptyTitle>
+              <EmptyDescription>请完成筛选条件配置后，点击「确认查询」生成临期费用分析数据</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-4 px-6 py-6">
       <ExpiryFilterBar
@@ -250,6 +360,9 @@ const ExpiryExpensePage: React.FC = () => {
         onChange={setFilters}
         onReset={handleReset}
         onExport={handleExport}
+        onConfirm={handleConfirm}
+        canConfirm={canConfirm}
+        loading={loading}
         exportDisabled={loading || !data || displayData.kpis.totalAmount === 0}
         rightActions={
           <AiAnalysisPanel

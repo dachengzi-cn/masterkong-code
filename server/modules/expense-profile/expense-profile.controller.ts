@@ -43,6 +43,11 @@ export class ExpenseProfileController {
     return this.service.getLatestUploadRecord();
   }
 
+  @Get('available-filters')
+  async getAvailableFilters(): Promise<{ months: string[]; specifications: string[] }> {
+    return this.expiryAnalysisService.getAvailableFilters();
+  }
+
   @Get()
   async findAll(
     @Query('page') page?: string,

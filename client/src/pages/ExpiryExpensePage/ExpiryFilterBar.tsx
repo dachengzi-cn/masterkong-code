@@ -26,6 +26,9 @@ interface ExpiryFilterBarProps {
   onChange: (filters: ExpiryAnalysisFilters) => void;
   onReset: () => void;
   onExport: () => void;
+  onConfirm: () => void;
+  canConfirm: boolean;
+  loading?: boolean;
   exportDisabled: boolean;
   rightActions?: React.ReactNode;
 }
@@ -36,6 +39,9 @@ const ExpiryFilterBar: React.FC<ExpiryFilterBarProps> = ({
   onChange,
   onReset,
   onExport,
+  onConfirm,
+  canConfirm,
+  loading = false,
   exportDisabled,
   rightActions,
 }) => {
@@ -161,6 +167,15 @@ const ExpiryFilterBar: React.FC<ExpiryFilterBarProps> = ({
       </div>
       <div className="flex items-center justify-end mt-3 gap-2">
         {rightActions}
+        <Button
+          size="sm"
+          variant="default"
+          onClick={onConfirm}
+          disabled={loading}
+          className="h-6 px-3 text-xs"
+        >
+          {loading ? '生成中…' : '确认查询'}
+        </Button>
         <Button
           variant="outline"
           onClick={onExport}

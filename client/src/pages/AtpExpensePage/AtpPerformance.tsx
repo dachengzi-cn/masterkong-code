@@ -45,8 +45,10 @@ interface AtpPerformanceProps {
   filters: HeatmapFilterParams;
   dateFrom: string;
   dateTo: string;
+  filterReady: boolean;
   onHasDataChange?: (hasData: boolean) => void;
   onDataChange?: (data: AtpPerformanceResponse | null) => void;
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 interface ColumnDef {
@@ -586,12 +588,14 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
   filters,
   dateFrom,
   dateTo,
+  filterReady,
   onHasDataChange,
   onDataChange,
+  onLoadingChange,
 }) => {
   const navigate = useNavigate();
   const [data, setData] = useState<AtpPerformanceResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [expanded, setExpanded] = useState<Record<DrillMetric, boolean>>({
@@ -613,6 +617,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    onLoadingChange?.(true);
     try {
       const result = await datasetApi.getAtpPerformance(
         dateFrom,
@@ -627,12 +632,16 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       setError(msg);
     } finally {
       setLoading(false);
+      onLoadingChange?.(false);
     }
-  }, [dateFrom, dateTo, filters]);
+  }, [dateFrom, dateTo, filters, onLoadingChange]);
 
+  // Only fire a query when the user has explicitly confirmed filters
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (filterReady) {
+      fetchData();
+    }
+  }, [filterReady, filters, fetchData]);
 
   const baseRows = data?.rows ?? [];
 

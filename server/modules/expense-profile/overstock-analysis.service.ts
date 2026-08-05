@@ -14,6 +14,9 @@ import type {
   OverstockSpecRiskItem,
   OverstockCohortItem,
   OverstockAnalysisExportResult,
+  OverstockPurchaseDrilldown,
+  OverstockPurchaseDrilldownGroup,
+  OverstockPurchaseDrilldownItem,
 } from '@shared/api.interface';
 
 interface EnrichedCohort {
@@ -22,6 +25,7 @@ interface EnrichedCohort {
   specification: string;
   purchaseMonth: string;
   purchaseAmount: number;
+  purchaseQuantity: number;
   salesRep: string;
   region: string;
   tier: string;
@@ -88,6 +92,7 @@ export class OverstockAnalysisService {
 
     return {
       summary,
+      purchaseDrilldown: this.buildPurchaseDrilldown(cohortMap),
       storeRisks,
       repRisks,
       specRisks,
@@ -159,6 +164,7 @@ export class OverstockAnalysisService {
       specification: string;
       purchaseMonth: string;
       purchaseAmount: number;
+      purchaseQuantity: number;
       salesRep?: string;
       region?: string;
     }>,
@@ -174,9 +180,22 @@ export class OverstockAnalysisService {
     >,
     filters: OverstockAnalysisFilters,
   ): Map<string, EnrichedCohort> {
+    // 进货月口径：仅统计筛选月（临期发生月）向前偏移 4 / 5 个月的进货批次。
+    // 例如筛选 7 月时，进货月范围 = [7-5, 7-4] = [2月, 3月]；
+    // 区间筛选时对应 [monthFrom-5, monthTo-4]。未筛选月份则不限制进货月。
+    const purchaseMonthFrom = filters.monthFrom
+      ? this.expiryAnalysisService.addMonths(filters.monthFrom, -5)
+      : undefined;
+    const purchaseMonthTo = filters.monthTo
+      ? this.expiryAnalysisService.addMonths(filters.monthTo, -4)
+      : undefined;
+
     const map = new Map<string, EnrichedCohort>();
 
     for (const r of purchaseRecords) {
+      if (purchaseMonthFrom && r.purchaseMonth < purchaseMonthFrom) continue;
+      if (purchaseMonthTo && r.purchaseMonth > purchaseMonthTo) continue;
+
       const profile = profileMap.get(r.customerCode);
       const region = r.region || profile?.region || '';
       const tier = profile?.tier || '';
@@ -196,6 +215,7 @@ export class OverstockAnalysisService {
       const existing = map.get(key);
       if (existing) {
         existing.purchaseAmount += r.purchaseAmount;
+        existing.purchaseQuantity += r.purchaseQuantity;
       } else {
         map.set(key, {
           customerCode: r.customerCode,
@@ -203,6 +223,7 @@ export class OverstockAnalysisService {
           specification: r.specification,
           purchaseMonth: r.purchaseMonth,
           purchaseAmount: r.purchaseAmount,
+          purchaseQuantity: r.purchaseQuantity,
           salesRep,
           region,
           tier,
@@ -224,14 +245,19 @@ export class OverstockAnalysisService {
     for (const e of expiryRecords) {
       if (!e.customerCode || !e.month || !e.specification) continue;
       const normalizedCode = this.normalizeCustomerCode(e.customerCode);
-      for (const offset of [4, 5]) {
-        const purchaseMonth = this.expiryAnalysisService.addMonths(e.month, -offset);
-        const key = `${normalizedCode}\t${e.specification}\t${purchaseMonth}`;
-        const cohort = cohortMap.get(key);
-        if (cohort) {
-          cohort.expiryMonth4Amount += offset === 4 ? e.amount : 0;
-          cohort.expiryMonth5Amount += offset === 5 ? e.amount : 0;
-        }
+      // 一条临期记录只能归因到一批进货：优先匹配 offset=4（M-4 最近进货批次），
+      // 未命中再尝试 offset=5（M-5），避免同一临期记录同时命中两个进货月
+      // 造成金额被重复计入（如 M-4 与 M-5 月均存在同规格进货时翻倍）。
+      const month4 = this.expiryAnalysisService.addMonths(e.month, -4);
+      const cohort4 = cohortMap.get(`${normalizedCode}\t${e.specification}\t${month4}`);
+      if (cohort4) {
+        cohort4.expiryMonth4Amount += e.amount;
+        continue;
+      }
+      const month5 = this.expiryAnalysisService.addMonths(e.month, -5);
+      const cohort5 = cohortMap.get(`${normalizedCode}\t${e.specification}\t${month5}`);
+      if (cohort5) {
+        cohort5.expiryMonth5Amount += e.amount;
       }
     }
   }
@@ -250,6 +276,7 @@ export class OverstockAnalysisService {
         specification: c.specification,
         purchaseMonth: c.purchaseMonth,
         purchaseAmount: Math.round(c.purchaseAmount * 100) / 100,
+        purchaseQuantity: Math.round(c.purchaseQuantity * 100) / 100,
         expiryMonth4Amount: Math.round(c.expiryMonth4Amount * 100) / 100,
         expiryMonth5Amount: Math.round(c.expiryMonth5Amount * 100) / 100,
         expiryAmount: Math.round(expiryAmount * 100) / 100,
@@ -259,13 +286,132 @@ export class OverstockAnalysisService {
     return items.sort((a, b) => b.conversionRate - a.conversionRate || a.purchaseAmount - b.purchaseAmount);
   }
 
+  /**
+   * 构建「总进货金额」下钻数据。
+   *
+   * 下钻口径：筛选月（临期发生月 M）的临期品项，在往前偏移 4 / 5 个月
+   * （即 M-4、M-5）的进货金额明细。同一进货批次若同时命中 -4/-5 两个
+   * 偏移，则分别在两个分组中展示各自对应的临期金额。
+   */
+  private buildPurchaseDrilldown(
+    cohortMap: Map<string, EnrichedCohort>,
+  ): OverstockPurchaseDrilldown {
+    const groupMap = new Map<string, OverstockPurchaseDrilldownGroup>();
+
+    const upsertGroup = (
+      expiryMonth: string,
+      purchaseMonth: string,
+      offset: number,
+    ): OverstockPurchaseDrilldownGroup => {
+      const key = `${expiryMonth}\t${purchaseMonth}\t${offset}`;
+      let group = groupMap.get(key);
+      if (!group) {
+        group = {
+          expiryMonth,
+          purchaseMonth,
+          offset,
+          purchaseAmount: 0,
+          purchaseQuantity: 0,
+          expiryAmount: 0,
+          storeCount: 0,
+          itemCount: 0,
+          items: [],
+        };
+        groupMap.set(key, group);
+      }
+      return group;
+    };
+
+    for (const c of cohortMap.values()) {
+      // offset = 4 对应的临期月为 purchaseMonth + 4
+      if (c.expiryMonth4Amount > 0) {
+        const expiryMonth = this.expiryAnalysisService.addMonths(c.purchaseMonth, 4);
+        const group = upsertGroup(expiryMonth, c.purchaseMonth, 4);
+        const item: OverstockPurchaseDrilldownItem = {
+          expiryMonth,
+          purchaseMonth: c.purchaseMonth,
+          offset: 4,
+          customerCode: c.customerCode,
+          customerName: c.customerName,
+          region: c.region,
+          business: c.business,
+          salesRep: c.salesRep,
+          specification: c.specification,
+          purchaseAmount: Math.round(c.purchaseAmount * 100) / 100,
+          purchaseQuantity: Math.round(c.purchaseQuantity * 100) / 100,
+          expiryAmount: Math.round(c.expiryMonth4Amount * 100) / 100,
+        };
+        group.items.push(item);
+        group.purchaseAmount += c.purchaseAmount;
+        group.purchaseQuantity += c.purchaseQuantity;
+        group.expiryAmount += c.expiryMonth4Amount;
+      }
+
+      // offset = 5 对应的临期月为 purchaseMonth + 5
+      if (c.expiryMonth5Amount > 0) {
+        const expiryMonth = this.expiryAnalysisService.addMonths(c.purchaseMonth, 5);
+        const group = upsertGroup(expiryMonth, c.purchaseMonth, 5);
+        const item: OverstockPurchaseDrilldownItem = {
+          expiryMonth,
+          purchaseMonth: c.purchaseMonth,
+          offset: 5,
+          customerCode: c.customerCode,
+          customerName: c.customerName,
+          region: c.region,
+          business: c.business,
+          salesRep: c.salesRep,
+          specification: c.specification,
+          purchaseAmount: Math.round(c.purchaseAmount * 100) / 100,
+          purchaseQuantity: Math.round(c.purchaseQuantity * 100) / 100,
+          expiryAmount: Math.round(c.expiryMonth5Amount * 100) / 100,
+        };
+        group.items.push(item);
+        group.purchaseAmount += c.purchaseAmount;
+        group.purchaseQuantity += c.purchaseQuantity;
+        group.expiryAmount += c.expiryMonth5Amount;
+      }
+    }
+
+    const groups: OverstockPurchaseDrilldownGroup[] = [];
+    let totalPurchaseAmount = 0;
+    let totalPurchaseQuantity = 0;
+    for (const g of groupMap.values()) {
+      const storeSet = new Set<string>();
+      for (const item of g.items) {
+        storeSet.add(item.customerCode);
+      }
+      g.storeCount = storeSet.size;
+      g.itemCount = g.items.length;
+      g.purchaseAmount = Math.round(g.purchaseAmount * 100) / 100;
+      g.purchaseQuantity = Math.round(g.purchaseQuantity * 100) / 100;
+      g.expiryAmount = Math.round(g.expiryAmount * 100) / 100;
+      g.items.sort((a, b) => b.expiryAmount - a.expiryAmount);
+      totalPurchaseAmount += g.purchaseAmount;
+      totalPurchaseQuantity += g.purchaseQuantity;
+      groups.push(g);
+    }
+
+    groups.sort(
+      (a, b) =>
+        a.expiryMonth.localeCompare(b.expiryMonth) ||
+        b.purchaseAmount - a.purchaseAmount,
+    );
+
+    return {
+      totalPurchaseAmount: Math.round(totalPurchaseAmount * 100) / 100,
+      totalPurchaseQuantity: Math.round(totalPurchaseQuantity * 100) / 100,
+      groups,
+    };
+  }
+
   private buildStoreRisks(cohortMap: Map<string, EnrichedCohort>): OverstockStoreRiskItem[] {
-    const groups = new Map<string, OverstockStoreRiskItem & { _purchaseAmountSum: number; _expSum: number }>();
+    const groups = new Map<string, OverstockStoreRiskItem & { _purchaseAmountSum: number; _purchaseQuantitySum: number; _expSum: number }>();
     for (const c of cohortMap.values()) {
       const existing = groups.get(c.customerCode);
       const expiryAmount = c.expiryMonth4Amount + c.expiryMonth5Amount;
       if (existing) {
         existing._purchaseAmountSum += c.purchaseAmount;
+        existing._purchaseQuantitySum += c.purchaseQuantity;
         existing._expSum += expiryAmount;
       } else {
         groups.set(c.customerCode, {
@@ -275,10 +421,12 @@ export class OverstockAnalysisService {
           business: c.business,
           salesRep: c.salesRep,
           purchaseAmount: 0,
+          purchaseQuantity: 0,
           expiryAmount: 0,
           conversionRate: 0,
           isFlagged: false,
           _purchaseAmountSum: c.purchaseAmount,
+          _purchaseQuantitySum: c.purchaseQuantity,
           _expSum: expiryAmount,
         });
       }
@@ -287,6 +435,7 @@ export class OverstockAnalysisService {
     const result: OverstockStoreRiskItem[] = [];
     for (const g of groups.values()) {
       g.purchaseAmount = Math.round(g._purchaseAmountSum * 100) / 100;
+      g.purchaseQuantity = Math.round(g._purchaseQuantitySum * 100) / 100;
       g.expiryAmount = Math.round(g._expSum * 100) / 100;
       g.conversionRate = g.purchaseAmount > 0 ? Math.round((g._expSum / g._purchaseAmountSum) * 10000) / 10000 : 0;
       result.push(g);
@@ -297,7 +446,7 @@ export class OverstockAnalysisService {
   private buildRepRisks(cohortMap: Map<string, EnrichedCohort>): OverstockRepRiskItem[] {
     const groups = new Map<
       string,
-      OverstockRepRiskItem & { _purchaseAmountSum: number; _expSum: number; _stores: Set<string> }
+      OverstockRepRiskItem & { _purchaseAmountSum: number; _purchaseQuantitySum: number; _expSum: number; _stores: Set<string> }
     >();
     for (const c of cohortMap.values()) {
       const key = `${c.salesRep}||${c.region}`;
@@ -305,6 +454,7 @@ export class OverstockAnalysisService {
       const expiryAmount = c.expiryMonth4Amount + c.expiryMonth5Amount;
       if (existing) {
         existing._purchaseAmountSum += c.purchaseAmount;
+        existing._purchaseQuantitySum += c.purchaseQuantity;
         existing._expSum += expiryAmount;
         existing._stores.add(c.customerCode);
       } else {
@@ -313,10 +463,12 @@ export class OverstockAnalysisService {
           region: c.region,
           storeCount: 1,
           purchaseAmount: 0,
+          purchaseQuantity: 0,
           expiryAmount: 0,
           conversionRate: 0,
           isFlagged: false,
           _purchaseAmountSum: c.purchaseAmount,
+          _purchaseQuantitySum: c.purchaseQuantity,
           _expSum: expiryAmount,
           _stores: new Set<string>([c.customerCode]),
         });
@@ -327,6 +479,7 @@ export class OverstockAnalysisService {
     for (const g of groups.values()) {
       g.storeCount = g._stores.size;
       g.purchaseAmount = Math.round(g._purchaseAmountSum * 100) / 100;
+      g.purchaseQuantity = Math.round(g._purchaseQuantitySum * 100) / 100;
       g.expiryAmount = Math.round(g._expSum * 100) / 100;
       g.conversionRate = g.purchaseAmount > 0 ? Math.round((g._expSum / g._purchaseAmountSum) * 10000) / 10000 : 0;
       result.push(g);
@@ -335,20 +488,23 @@ export class OverstockAnalysisService {
   }
 
   private buildSpecRisks(cohortMap: Map<string, EnrichedCohort>): OverstockSpecRiskItem[] {
-    const groups = new Map<string, OverstockSpecRiskItem & { _purchaseAmountSum: number; _expSum: number }>();
+    const groups = new Map<string, OverstockSpecRiskItem & { _purchaseAmountSum: number; _purchaseQuantitySum: number; _expSum: number }>();
     for (const c of cohortMap.values()) {
       const existing = groups.get(c.specification);
       const expiryAmount = c.expiryMonth4Amount + c.expiryMonth5Amount;
       if (existing) {
         existing._purchaseAmountSum += c.purchaseAmount;
+        existing._purchaseQuantitySum += c.purchaseQuantity;
         existing._expSum += expiryAmount;
       } else {
         groups.set(c.specification, {
           specification: c.specification,
           purchaseAmount: 0,
+          purchaseQuantity: 0,
           expiryAmount: 0,
           conversionRate: 0,
           _purchaseAmountSum: c.purchaseAmount,
+          _purchaseQuantitySum: c.purchaseQuantity,
           _expSum: expiryAmount,
         });
       }
@@ -357,6 +513,7 @@ export class OverstockAnalysisService {
     const result: OverstockSpecRiskItem[] = [];
     for (const g of groups.values()) {
       g.purchaseAmount = Math.round(g._purchaseAmountSum * 100) / 100;
+      g.purchaseQuantity = Math.round(g._purchaseQuantitySum * 100) / 100;
       g.expiryAmount = Math.round(g._expSum * 100) / 100;
       g.conversionRate = g.purchaseAmount > 0 ? Math.round((g._expSum / g._purchaseAmountSum) * 10000) / 10000 : 0;
       result.push(g);
@@ -412,6 +569,7 @@ export class OverstockAnalysisService {
       specification: string;
       purchaseMonth: string;
       purchaseAmount: number;
+      purchaseQuantity: number;
       salesRep?: string;
       region?: string;
     }>,

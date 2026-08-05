@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { expenseApi, datasetApi, customerApi } from '@client/src/api/index';
 import { Button } from '@/components/ui/button';
@@ -89,13 +88,6 @@ function unionUnique(...arrays: string[][]): string[] {
   return Array.from(set);
 }
 
-interface CellStyle {
-  font?: { sz: number; color: { rgb: string }; bold?: boolean };
-  alignment?: { vertical: string; horizontal?: string };
-  border?: Record<string, { style: string; color: { rgb: string } }>;
-  fill?: { fgColor: { rgb: string } };
-}
-
 const ExpensePage: React.FC = () => {
   const navigate = useNavigate();
 
@@ -116,7 +108,6 @@ const ExpensePage: React.FC = () => {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
   const [hasConfirmedOnce, setHasConfirmedOnce] = useState(false);
   const hasAdjustedMonthRef = useRef(false);
 
@@ -362,165 +353,6 @@ const ExpensePage: React.FC = () => {
     setDimension('region');
   }, []);
 
-  const handleExport = useCallback(async () => {
-    if (loading || exporting) return;
-    setExporting(true);
-    try {
-      const XLSX = await import('xlsx-js-style').then(
-        (m) => m.default || m,
-      );
-      const wb = XLSX.utils.book_new();
-
-      // KPI sheet
-      const atpPaidAmount = displayAtpData.rows.reduce(
-        (sum, r) => sum + r.paidAmount,
-        0,
-      );
-      const atpPaidStoreSales = displayAtpData.rows.reduce(
-        (sum, r) => sum + r.paidStoreSales,
-        0,
-      );
-      const atpTotalStoreSales = displayAtpData.rows.reduce(
-        (sum, r) => sum + r.totalStoreSales,
-        0,
-      );
-      const atpFeeRatio =
-        atpPaidStoreSales > 0 ? atpPaidAmount / atpPaidStoreSales : 0;
-      const atpSalesRatio =
-        atpTotalStoreSales > 0 ? atpPaidStoreSales / atpTotalStoreSales : 0;
-
-      const kpiSheet = XLSX.utils.aoa_to_sheet([
-        ['指标', '数值'],
-        ['临期费用总额', displayExpiryData.kpis.totalAmount],
-        ['环比变化（%）', displayExpiryData.kpis.monthOverMonthChange],
-        ['涉及门店数', displayExpiryData.kpis.involvedStoreCount],
-        ['ATP 总付费金额', atpPaidAmount],
-        ['ATP 投入费比', atpFeeRatio],
-        ['ATP 付费点销额占比', atpSalesRatio],
-      ]);
-      XLSX.utils.book_append_sheet(wb, kpiSheet, '总览KPI');
-
-      // Trend sheet
-      const months = new Set<string>();
-      displayExpiryData.trend.forEach((item) => months.add(item.month));
-      atpMonthlyTrend.forEach((item) => months.add(item.month));
-      const trendRows = Array.from(months)
-        .sort()
-        .map((month) => ({
-          月份: month,
-          临期费用:
-            displayExpiryData.trend.find((item) => item.month === month)
-              ?.amount ?? 0,
-          ATP付费金额:
-            atpMonthlyTrend.find((item) => item.month === month)?.paidAmount ??
-            0,
-        }));
-      const trendSheet = XLSX.utils.json_to_sheet(trendRows);
-      XLSX.utils.book_append_sheet(wb, trendSheet, '月度趋势');
-
-      // Distribution sheet
-      const distributionSheet = XLSX.utils.json_to_sheet(
-        distributionData.map((item) => ({
-          维度: DIMENSION_LABELS[dimension],
-          值: item.name,
-          临期费用: item.expiryAmount,
-          ATP付费金额: item.atpPaidAmount,
-          合计金额: item.totalAmount,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, distributionSheet, '维度分布');
-
-      // Ranking sheet
-      const rankingSheet = XLSX.utils.json_to_sheet(
-        rankingData.map((item) => ({
-          维度: DIMENSION_LABELS[dimension],
-          值: item.value,
-          合计金额: item.totalAmount,
-          临期费用: item.expiryAmount,
-          ATP付费金额: item.atpPaidAmount,
-          占比: item.share,
-          记录数: item.recordCount,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, rankingSheet, '费用排行');
-
-      // Detail sheet
-      const detailSheet = XLSX.utils.json_to_sheet(
-        detailData.map((item) => ({
-          所别: item.region,
-          合计金额: item.totalAmount,
-          临期费用: item.expiryAmount,
-          ATP付费金额: item.atpPaidAmount,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, detailSheet, '费用明细对比');
-
-      // ATP detail sheet
-      const atpDetailSheet = XLSX.utils.json_to_sheet(
-        displayAtpData.rows.map((row) => ({
-          所别: row.region,
-          阶层: row.tier,
-          业代: row.salesRep,
-          总点数: row.totalPoints,
-          付费点数: row.paidPoints,
-          付费金额: row.paidAmount,
-          总门店销额: row.totalStoreSales,
-          投入费比: row.paidPointFeeRatio,
-          付费点销额占比: row.paidPointSalesRatio,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, atpDetailSheet, 'ATP绩效明细');
-
-      const headerStyle: CellStyle = {
-        fill: { fgColor: { rgb: 'E8EEFC' } },
-        font: { bold: true, sz: 10, color: { rgb: '1A2433' } },
-        alignment: { horizontal: 'center', vertical: 'center' },
-        border: {
-          top: { style: 'thin', color: { rgb: 'D0D5DD' } },
-          bottom: { style: 'thin', color: { rgb: 'D0D5DD' } },
-          left: { style: 'thin', color: { rgb: 'D0D5DD' } },
-          right: { style: 'thin', color: { rgb: 'D0D5DD' } },
-        },
-      };
-
-      [kpiSheet, trendSheet, distributionSheet, rankingSheet, detailSheet, atpDetailSheet].forEach(
-        (sheet) => {
-          const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
-          for (let c = range.s.c; c <= range.e.c; c++) {
-            const cell = sheet[XLSX.utils.encode_cell({ r: 0, c })] as Record<
-              string,
-              unknown
-            >;
-            if (cell) cell.s = headerStyle;
-          }
-        },
-      );
-
-      XLSX.writeFile(
-        wb,
-        `费用总览报告_${confirmedFilters.monthFrom ?? ''}_${confirmedFilters.monthTo ?? ''}.xlsx`,
-      );
-      toast.success('费用总览报告导出成功');
-    } catch (err: unknown) {
-      logger.error('Failed to export expense overview:', err);
-      toast.error('导出失败，请重试');
-    } finally {
-      setExporting(false);
-    }
-  }, [
-    loading,
-    exporting,
-    displayExpiryData,
-    displayAtpData.rows,
-    atpMonthlyTrend,
-    distributionData,
-    rankingData,
-    detailData,
-    confirmedFilters.monthFrom,
-    confirmedFilters.monthTo,
-    dimension,
-  ]);
-
   if (!hasAnyData && !loading && !error) {
     return (
       <div className="mx-auto max-w-[1400px] px-6 py-6">
@@ -551,10 +383,8 @@ const ExpensePage: React.FC = () => {
         options={filterOptions}
         onChange={setPendingFilters}
         onReset={handleReset}
-        onExport={handleExport}
         onConfirm={handleConfirm}
         canConfirm={canConfirm}
-        exportDisabled={loading || exporting || !hasAnyData}
       />
 
       {error && (

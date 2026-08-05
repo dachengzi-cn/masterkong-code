@@ -30,6 +30,13 @@ import {
 } from '../DashboardPage/composite-format';
 import AtpPerformance from './AtpPerformance';
 import FilterBar from '@/components/business-ui/filter-bar';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from '@/components/ui/empty';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -57,6 +64,12 @@ const AtpExpensePage: React.FC = () => {
   const [endMonth, setEndMonth] = useState<string>(currentMonth);
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [filters, setFilters] = useState<HeatmapFilterParams>({ tier: ['一阶'] });
+  const [confirmedStartMonth, setConfirmedStartMonth] = useState<string>('');
+  const [confirmedEndMonth, setConfirmedEndMonth] = useState<string>('');
+  const [confirmedFilters, setConfirmedFilters] = useState<HeatmapFilterParams>({});
+  const [filterReady, setFilterReady] = useState(false);
+  const [hasConfirmedOnce, setHasConfirmedOnce] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [hasAtpData, setHasAtpData] = useState(false);
   const [atpData, setAtpData] = useState<AtpPerformanceResponse | null>(null);
   const [options, setOptions] = useState<FilterOptions>({
@@ -161,6 +174,34 @@ const AtpExpensePage: React.FC = () => {
     setEndMonth(currentMonth);
   };
 
+  const canConfirm = useMemo(
+    () => !!startMonth && !!endMonth,
+    [startMonth, endMonth],
+  );
+
+  const handleConfirm = useCallback(() => {
+    if (!canConfirm) {
+      toast.warning('请先配置完整的筛选条件（年月区间）后再确认查询');
+      return;
+    }
+    setConfirmedStartMonth(startMonth);
+    setConfirmedEndMonth(endMonth);
+    setConfirmedFilters({ ...filters });
+    setFilterReady(true);
+    setHasConfirmedOnce(true);
+  }, [canConfirm, startMonth, endMonth, filters]);
+
+  const handleReset = useCallback(() => {
+    setFilters({});
+    setStartMonth(currentMonth);
+    setEndMonth(currentMonth);
+    setConfirmedStartMonth(currentMonth);
+    setConfirmedEndMonth(currentMonth);
+    setConfirmedFilters({});
+    setFilterReady(true);
+    setHasConfirmedOnce(true);
+  }, [currentMonth]);
+
   const defaultMonthOptions = useMemo(() => {
     const options: string[] = [];
     const current = new Date();
@@ -198,6 +239,12 @@ const AtpExpensePage: React.FC = () => {
     const end = monthToDateRange(endMonth).to;
     return { from: start, to: end };
   }, [startMonth, endMonth]);
+
+  const confirmedDateRange = useMemo(() => {
+    const start = monthToDateRange(confirmedStartMonth || startMonth).from;
+    const end = monthToDateRange(confirmedEndMonth || endMonth).to;
+    return { from: start, to: end };
+  }, [confirmedStartMonth, confirmedEndMonth, startMonth, endMonth]);
 
   // Route dialog handlers (placeholder for future ATP export functionality)
   const handleOpenRouteDialog = useCallback(() => {
@@ -265,10 +312,142 @@ const AtpExpensePage: React.FC = () => {
     }
   }, [allRoutesSelected]);
 
+  if (!hasConfirmedOnce && !loading) {
+    return (
+      <div className="mx-auto max-w-[1400px] space-y-4 px-6 py-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-base font-bold text-foreground">ATP费用分析</h1>
+        </div>
+
+        <FilterBar>
+          <div className="flex items-center gap-2 mb-3">
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearAll}
+                className="ml-auto h-6 px-2 text-xs"
+              >
+                <span className="inline-flex items-center justify-center text-base leading-none mr-1" >❌</span>
+                重置
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground shrink-0">年月区间</span>
+              <Select
+                value={startMonth}
+                onValueChange={(v) => {
+                  setStartMonth(v);
+                  if (v > endMonth) setEndMonth(v);
+                }}
+              >
+                <SelectTrigger className="h-8 w-[120px]">
+                  <SelectValue placeholder="选择起始月份" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {monthOptions.map((month) => (
+                      <SelectItem key={month} value={month}>{month}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">~</span>
+              <Select
+                value={endMonth}
+                onValueChange={(v) => {
+                  setEndMonth(v);
+                  if (v < startMonth) setStartMonth(v);
+                }}
+              >
+                <SelectTrigger className="h-8 w-[120px]">
+                  <SelectValue placeholder="选择结束月份" />
+                </SelectTrigger>
+                <SelectContent>
+                <SelectGroup>
+                  {monthOptions.map((month) => (
+                    <SelectItem key={month} value={month}>{month}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-px h-5 bg-border mx-1" />
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground shrink-0">所别</span>
+            <MultiSelect
+              label="所别"
+              options={options.regions}
+              value={filters.region ?? []}
+              onChange={(v: string[]) => updateArrayFilter('region', v)}
+              triggerClassName="h-8 w-[120px] rounded-full"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground shrink-0">阶层</span>
+            <MultiSelect
+              label="阶层"
+              options={options.tiers}
+              value={filters.tier ?? []}
+              onChange={(v: string[]) => updateArrayFilter('tier', v)}
+              triggerClassName="h-8 w-[120px] rounded-full"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground shrink-0">人员</span>
+            <MultiSelect
+              label="人员"
+              options={options.salesReps}
+              value={filters.salesRep ?? []}
+              onChange={(v: string[]) => updateArrayFilter('salesRep', v)}
+              triggerClassName="h-8 w-[120px] rounded-full"
+            />
+          </div>
+
+        </div>
+        <div className="flex items-center justify-end mt-3 gap-2">
+          <Button
+            size="sm"
+            variant="default"
+            onClick={handleConfirm}
+            disabled={loading}
+            className="h-6 px-3 text-xs"
+          >
+            {loading ? '生成中…' : '确认查询'}
+          </Button>
+          <AiAnalysisPanel
+            pageScope="atp"
+            inputData={aiInputData}
+            defaultQuestion="请分析当前ATP费用绩效数据，识别费比分布、业代绩效差异与优化机会。"
+            disabled={!atpData || atpData.rows.length === 0}
+            size="sm"
+          />
+        </div>
+      </FilterBar>
+
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Empty className="border-none">
+            <EmptyHeader>
+              <EmptyMedia variant="emoji">🔍</EmptyMedia>
+              <EmptyTitle>尚未生成分析结果</EmptyTitle>
+              <EmptyDescription>请完成筛选条件配置后，点击「确认查询」生成ATP费用分析数据</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-4 px-6 py-6">
       {/* Filter Bar - matches system design pattern from Dashboard */}
-      {hasAtpData && (
       <FilterBar>
         <div className="flex items-center gap-2 mb-3">
           {hasActiveFilters && (
@@ -363,6 +542,15 @@ const AtpExpensePage: React.FC = () => {
 
         </div>
         <div className="flex items-center justify-end mt-3 gap-2">
+          <Button
+            size="sm"
+            variant="default"
+            onClick={handleConfirm}
+            disabled={loading}
+            className="h-6 px-3 text-xs"
+          >
+            {loading ? '生成中…' : '确认查询'}
+          </Button>
           <AiAnalysisPanel
             pageScope="atp"
             inputData={aiInputData}
@@ -372,15 +560,16 @@ const AtpExpensePage: React.FC = () => {
           />
         </div>
       </FilterBar>
-      )}
 
       {/* ATP Performance module - Phase 1: basic framework */}
       <AtpPerformance
-        filters={filters}
-        dateFrom={dateRange.from}
-        dateTo={dateRange.to}
+        filters={confirmedFilters}
+        dateFrom={confirmedDateRange.from}
+        dateTo={confirmedDateRange.to}
+        filterReady={filterReady}
         onHasDataChange={setHasAtpData}
         onDataChange={setAtpData}
+        onLoadingChange={setLoading}
       />
 
       {/* Route Selection Dialog (kept for future use) */}

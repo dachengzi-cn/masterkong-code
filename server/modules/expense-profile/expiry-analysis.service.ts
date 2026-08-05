@@ -131,6 +131,15 @@ export class ExpiryAnalysisService {
     };
   }
 
+  /** 获取可用的筛选选项（月份、规格等），独立于主分析查询，供前端初始化时填充下拉 */
+  async getAvailableFilters(): Promise<{ months: string[]; specifications: string[] }> {
+    const allRecords = await this.expenseProfileService.findAllUnpaginated();
+    const profileMap = await this.buildProfileMap();
+    const parsed = this.parseExpiryRecords(allRecords, profileMap);
+    const { months, specifications } = this.extractAvailableFilters(parsed);
+    return { months, specifications };
+  }
+
   async getDrilldown(filters: ExpiryAnalysisFilters): Promise<ExpiryDrilldownResult> {
     const allRecords = await this.expenseProfileService.findAllUnpaginated();
     const profileMap = await this.buildProfileMap();
