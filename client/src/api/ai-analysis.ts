@@ -23,6 +23,35 @@ export interface GetSkillsResponse {
   items: AiSkillItem[];
 }
 
+/** 模块注册表（技能↔模块映射） */
+export interface ModuleRegistrySkill {
+  id: string;
+  skillKey: string;
+  name: string;
+  version: number;
+  isBuiltin: boolean;
+  updatedAt: string;
+}
+
+export interface ModuleRegistryModule {
+  pageScope: string;
+  name: string;
+  icon: string;
+  description: string;
+  skills: ModuleRegistrySkill[];
+}
+
+export interface ModuleRegistryGroup {
+  groupId: string;
+  groupName: string;
+  icon: string;
+  modules: ModuleRegistryModule[];
+}
+
+export interface GetModuleMappingResponse {
+  groups: ModuleRegistryGroup[];
+}
+
 export interface AnalysisConfig {
   collaborationMode: CollaborationMode;
   defaultConfigKey?: string;
@@ -134,6 +163,12 @@ export async function getSkillsByPage(pageScope: string): Promise<GetSkillsRespo
     method: 'GET',
   });
   return res.data as GetSkillsResponse;
+}
+
+/** 获取模块注册表与技能映射关系 */
+export async function getModuleMapping(): Promise<GetModuleMappingResponse> {
+  const res = await axiosForBackend({ url: '/api/ai-analysis/modules', method: 'GET' });
+  return res.data as GetModuleMappingResponse;
 }
 
 /** 更新 Skill */

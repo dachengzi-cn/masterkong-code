@@ -247,6 +247,119 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
   },
 ];
 
+/**
+ * 分析板块模块注册表 — 单一事实来源
+ * 描述系统各分析模块的层级结构（分组 → 模块）及其对应技能 pageScope
+ * 用于：设置面板的技能↔模块映射展示、技能分组的统一命名
+ */
+export interface ModuleRegistryGroup {
+  groupId: string;
+  groupName: string;
+  icon: string;
+  modules: Array<{
+    /** 模块唯一 pageScope（与技能 pageScope 一致） */
+    pageScope: string;
+    /** 模块名称 */
+    name: string;
+    /** 模块图标 */
+    icon: string;
+    /** 模块层级说明 */
+    description: string;
+  }>;
+}
+
+/** 模块层级注册表（与侧边栏导航一致） */
+export const MODULE_REGISTRY: ModuleRegistryGroup[] = [
+  {
+    groupId: 'dashboard',
+    groupName: '成交分析',
+    icon: '📊',
+    modules: [
+      {
+        pageScope: 'dashboard/cumulative',
+        name: '累计成交分析',
+        icon: '📈',
+        description: '累计成交率趋势、业代排名、未成交门店与异常波动',
+      },
+      {
+        pageScope: 'dashboard/daily',
+        name: '当日成交分析',
+        icon: '📅',
+        description: '每日成交率波动、周末效应与最佳/最差营业日',
+      },
+      {
+        pageScope: 'dashboard/brand-spec',
+        name: '品牌 & 规格分析',
+        icon: '🏷️',
+        description: '品牌与规格的成交覆盖、组合优化与机会品类',
+      },
+    ],
+  },
+  {
+    groupId: 'expense',
+    groupName: '费用总览',
+    icon: '💰',
+    modules: [
+      {
+        pageScope: 'expense/expiry',
+        name: '临期费用分析',
+        icon: '⏰',
+        description: '临期费用金额趋势、区域分布、规格集中度与风险预警',
+      },
+      {
+        pageScope: 'expense/atp',
+        name: 'ATP费用分析',
+        icon: '⚡',
+        description: '投入费比、付费点销额占比与业代绩效分布',
+      },
+      {
+        pageScope: 'expense/overstock',
+        name: '差异门店分析',
+        icon: '📦',
+        description: '差异门店识别与库存异常分析',
+      },
+    ],
+  },
+  {
+    groupId: 'customer',
+    groupName: '客户与费用',
+    icon: '👥',
+    modules: [
+      {
+        pageScope: 'customers',
+        name: '客户总览',
+        icon: '👥',
+        description: '客户维度分析',
+      },
+      {
+        pageScope: 'expense',
+        name: '费用总览',
+        icon: '💰',
+        description: '费用维度分析',
+      },
+      {
+        pageScope: 'service-analysis',
+        name: '服务点数分析',
+        icon: '📍',
+        description: '服务点数维度分析',
+      },
+    ],
+  },
+  {
+    groupId: 'global',
+    groupName: '通用',
+    icon: '🌐',
+    modules: [
+      {
+        pageScope: 'global',
+        name: '通用分析',
+        icon: '🌐',
+        description: '不绑定特定模块的通用分析技能',
+      },
+    ],
+  },
+];
+
 /** 协同模式枚举 */
 export const COLLABORATION_MODES = {
   INDEPENDENT: 'independent',

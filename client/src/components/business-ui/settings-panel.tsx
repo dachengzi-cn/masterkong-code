@@ -294,7 +294,7 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
             <div>
               <h3 className="text-sm font-medium text-foreground">AI 分析技能</h3>
               <p className="text-xs text-muted-foreground mt-1">
-                查看与优化各页面分析技能的 Prompt 模板、输出 Schema 与版本存档
+                查看技能与分析模块的对应关系，可视化调整分析任务与 Prompt，保存后立即生效
               </p>
             </div>
             <Separator />

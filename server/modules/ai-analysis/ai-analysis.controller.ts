@@ -56,6 +56,33 @@ export class AiAnalysisController {
     };
   }
 
+  /** 获取模块注册表与技能映射关系 */
+  @Get('modules')
+  async getModuleMapping() {
+    const mapping = await this.aiAnalysisService.getModuleMapping();
+    return {
+      groups: mapping.map((group) => ({
+        groupId: group.groupId,
+        groupName: group.groupName,
+        icon: group.icon,
+        modules: group.modules.map((mod) => ({
+          pageScope: mod.pageScope,
+          name: mod.name,
+          icon: mod.icon,
+          description: mod.description,
+          skills: mod.skills.map((s) => ({
+            id: s.id,
+            skillKey: s.skillKey,
+            name: s.name,
+            version: s.version,
+            isBuiltin: s.isBuiltin,
+            updatedAt: s.updatedAt.toISOString(),
+          })),
+        })),
+      })),
+    };
+  }
+
   /** 更新 Skill（迭代优化） */
   @Put('skills/:skillKey')
   async updateSkill(

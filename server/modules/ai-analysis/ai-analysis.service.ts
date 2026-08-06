@@ -4,7 +4,12 @@ import { eq, and, desc } from 'drizzle-orm';
 import { aiSkill, aiAnalysisSession, aiAnalysisConfig } from '@server/database/schema';
 import { AiConfigService } from '../ai/ai-config.service';
 import { AiService } from '../ai/ai.service';
-import { BUILTIN_SKILLS, PLANNER_SYSTEM_PROMPT, CRITIC_SYSTEM_PROMPT } from './ai-analysis.constants';
+import {
+  BUILTIN_SKILLS,
+  PLANNER_SYSTEM_PROMPT,
+  CRITIC_SYSTEM_PROMPT,
+  MODULE_REGISTRY,
+} from './ai-analysis.constants';
 import { SkillPreprocessor } from './skill-preprocessor';
 import { SkillValidator } from './skill-validator';
 import type {
@@ -18,6 +23,20 @@ import type {
   InlineModelConfig,
 } from './ai-analysis.types';
 import type { DecryptedAiConfig } from '../ai/ai-config.types';
+
+/** 模块注册表分组 + 技能映射 */
+type ModuleMappingGroup = {
+  groupId: string;
+  groupName: string;
+  icon: string;
+  modules: Array<{
+    pageScope: string;
+    name: string;
+    icon: string;
+    description: string;
+    skills: SkillRecord[];
+  }>;
+};
 
 @Injectable()
 export class AiAnalysisService {
@@ -96,6 +115,25 @@ export class AiAnalysisService {
       .where(eq(aiSkill.skillKey, skillKey))
       .limit(1);
     return rows.length > 0 ? this.toSkillRecord(rows[0]) : null;
+  }
+
+  /** 获取模块注册表与技能映射关系（含层级结构） */
+  async getModuleMapping(): Promise<ModuleMappingGroup[]> {
+    const allSkills = await this.findAllSkills();
+    const skillByScope = new Map<string, SkillRecord[]>();
+    for (const skill of allSkills) {
+      const scope = skill.pageScope || 'global';
+      if (!skillByScope.has(scope)) skillByScope.set(scope, []);
+      skillByScope.get(scope)!.push(skill);
+    }
+
+    return MODULE_REGISTRY.map((group) => ({
+      ...group,
+      modules: group.modules.map((mod) => ({
+        ...mod,
+        skills: skillByScope.get(mod.pageScope) ?? [],
+      })),
+    }));
   }
 
   /** 更新 Skill（支持自定义 Skill 的迭代优化） */
