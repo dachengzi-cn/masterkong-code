@@ -423,7 +423,7 @@ const AtpExpensePage: React.FC = () => {
             {loading ? '生成中…' : '确认查询'}
           </Button>
           <AiAnalysisPanel
-            pageScope="atp"
+            pageScope="expense/atp"
             inputData={aiInputData}
             defaultQuestion="请分析当前ATP费用绩效数据，识别费比分布、业代绩效差异与优化机会。"
             disabled={!atpData || atpData.rows.length === 0}
@@ -552,7 +552,7 @@ const AtpExpensePage: React.FC = () => {
             {loading ? '生成中…' : '确认查询'}
           </Button>
           <AiAnalysisPanel
-            pageScope="atp"
+            pageScope="expense/atp"
             inputData={aiInputData}
             defaultQuestion="请分析当前ATP费用绩效数据，识别费比分布、业代绩效差异与优化机会。"
             disabled={!atpData || atpData.rows.length === 0}

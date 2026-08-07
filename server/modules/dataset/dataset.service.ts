@@ -44,6 +44,7 @@ import type {
   AtpPerformanceStoreDetailResponse,
   AtpPerformanceStoreRow,
   AtpAvailableMonthsResponse,
+  AtpThresholdParams,
 } from '@shared/api.interface';
 
 interface MemoryDataset {
@@ -4089,11 +4090,18 @@ export class DatasetService implements OnModuleInit {
     dateTo: string,
     _granularity: TimeGranularity,
     filters?: HeatmapFilterParams,
+    thresholds?: AtpThresholdParams,
   ): Promise<AtpPerformanceResponse> {
     const [customers, expenses] = await Promise.all([
       this.customerProfileService.findAllUnpaginated(),
       this.expenseProfileService.findAllUnpaginated(),
     ]);
+
+    // 自定义分档参数（缺省用系统默认值）
+    const feeLe10Threshold = thresholds?.feeLe10 ?? 0.1;
+    const feeGt15Threshold = thresholds?.feeGt15 ?? 0.15;
+    const salesLt1000Threshold = thresholds?.salesLt1000 ?? 1000;
+    const salesLt2000Threshold = thresholds?.salesLt2000 ?? 2000;
 
     // 按所选月份范围过滤费用资料
     const startYm = String(dateFrom ?? '').slice(0, 7);
@@ -4146,12 +4154,12 @@ export class DatasetService implements OnModuleInit {
           feeNoDeal = 1;
         } else {
           const storeFeeRatio = (paidAmount * selectedMonthCount) / storeSales;
-          if (storeFeeRatio <= 0.1) feeLe10 = 1;
-          else if (storeFeeRatio <= 0.15) fee10to15 = 1;
+          if (storeFeeRatio <= feeLe10Threshold) feeLe10 = 1;
+          else if (storeFeeRatio <= feeGt15Threshold) fee10to15 = 1;
           else feeGt15 = 1;
         }
-        if (storeSales < 1000) salesLt1000 = 1;
-        if (storeSales < 2000) salesLt2000 = 1;
+        if (storeSales < salesLt1000Threshold) salesLt1000 = 1;
+        if (storeSales < salesLt2000Threshold) salesLt2000 = 1;
       }
 
       const key = `${region}||${tier}||${salesRep}`;
@@ -4227,11 +4235,18 @@ export class DatasetService implements OnModuleInit {
     dateTo: string,
     _granularity: TimeGranularity,
     filters?: HeatmapFilterParams,
+    thresholds?: AtpThresholdParams,
   ): Promise<AtpPerformanceStoreDetailResponse> {
     const [customers, expenses] = await Promise.all([
       this.customerProfileService.findAllUnpaginated(),
       this.expenseProfileService.findAllUnpaginated(),
     ]);
+
+    // 自定义分档参数（缺省用系统默认值）
+    const feeLe10Threshold = thresholds?.feeLe10 ?? 0.1;
+    const feeGt15Threshold = thresholds?.feeGt15 ?? 0.15;
+    const salesLt1000Threshold = thresholds?.salesLt1000 ?? 1000;
+    const salesLt2000Threshold = thresholds?.salesLt2000 ?? 2000;
 
     const startYm = String(dateFrom ?? '').slice(0, 7);
     const endYm = String(dateTo ?? '').slice(0, 7);
@@ -4281,12 +4296,12 @@ export class DatasetService implements OnModuleInit {
           feeRatioNoDeal = 1;
         } else {
           const storeFeeRatio = (paidAmount * selectedMonthCount) / storeSales;
-          if (storeFeeRatio <= 0.1) feeRatioLe10 = 1;
-          else if (storeFeeRatio <= 0.15) feeRatio10to15 = 1;
+          if (storeFeeRatio <= feeLe10Threshold) feeRatioLe10 = 1;
+          else if (storeFeeRatio <= feeGt15Threshold) feeRatio10to15 = 1;
           else feeRatioGt15 = 1;
         }
-        if (storeSales < 1000) salesLt1000Count = 1;
-        if (storeSales < 2000) salesLt2000Count = 1;
+        if (storeSales < salesLt1000Threshold) salesLt1000Count = 1;
+        if (storeSales < salesLt2000Threshold) salesLt2000Count = 1;
       }
 
       const paidPointFeeRatio = paidStoreSales > 0

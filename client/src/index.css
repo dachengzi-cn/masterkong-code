@@ -56,6 +56,71 @@ html body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Rainbow neon button (Uiverse style, keeps original shape/size) ──
+   仅覆盖背景与内部显示，不改变按钮的圆角、尺寸、内边距。 */
+.ai-rainbow-btn {
+  position: relative !important;
+  overflow: visible !important;
+  background: linear-gradient(135deg, #14ffe9, #ffeb3b, #ff00e0) !important;
+  border-color: transparent !important;
+  cursor: pointer;
+  animation: ai-rainbow-animate 1.5s linear infinite;
+  transition: 0.3s;
+}
+
+@keyframes ai-rainbow-animate {
+  100% {
+    filter: hue-rotate(360deg);
+  }
+}
+
+.ai-rainbow-btn .glow {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  background: inherit;
+  border-radius: inherit;
+  filter: blur(8px);
+  pointer-events: none;
+}
+
+.ai-rainbow-btn .glow:first-child {
+  filter: blur(12px);
+}
+
+.ai-rainbow-btn .glow:last-child {
+  filter: blur(12px);
+}
+
+.ai-rainbow-btn .display {
+  position: absolute;
+  inset: 2px;
+  z-index: 1;
+  background-color: #1b1b1b;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.ai-rainbow-btn .content {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: white;
+  pointer-events: none;
+}
+
+.ai-rainbow-btn .content .msg {
+  background: linear-gradient(135deg, #14ffe9, #ffeb3b, #ff00e0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
 /* Total / summary row utility */
 .table-total-row {
   font-weight: 600;

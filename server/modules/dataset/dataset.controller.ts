@@ -81,9 +81,14 @@ export class DatasetController {
     @Query('brand') brand?: string,
     @Query('salesRep') salesRep?: string,
     @Query('specification') specification?: string,
+    @Query('feeLe10') feeLe10?: string,
+    @Query('feeGt15') feeGt15?: string,
+    @Query('salesLt1000') salesLt1000?: string,
+    @Query('salesLt2000') salesLt2000?: string,
   ): Promise<AtpPerformanceResponse> {
     const g = (['day', 'week', 'month', 'year'].includes(granularity ?? '') ? granularity : 'day') as TimeGranularity;
     const split = (v?: string) => v ? v.split(',').filter(Boolean) : undefined;
+    const num = (v?: string) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined);
     return this.datasetService.getAtpPerformance(dateFrom, dateTo, g, {
       region: split(region),
       tier: split(tier),
@@ -93,6 +98,11 @@ export class DatasetController {
       brand: split(brand),
       salesRep: split(salesRep),
       specification: split(specification),
+    }, {
+      feeLe10: num(feeLe10),
+      feeGt15: num(feeGt15),
+      salesLt1000: num(salesLt1000),
+      salesLt2000: num(salesLt2000),
     });
   }
 
@@ -109,9 +119,14 @@ export class DatasetController {
     @Query('brand') brand?: string,
     @Query('salesRep') salesRep?: string,
     @Query('specification') specification?: string,
+    @Query('feeLe10') feeLe10?: string,
+    @Query('feeGt15') feeGt15?: string,
+    @Query('salesLt1000') salesLt1000?: string,
+    @Query('salesLt2000') salesLt2000?: string,
   ): Promise<AtpPerformanceStoreDetailResponse> {
     const g = (['day', 'week', 'month', 'year'].includes(granularity ?? '') ? granularity : 'day') as TimeGranularity;
     const split = (v?: string) => v ? v.split(',').filter(Boolean) : undefined;
+    const num = (v?: string) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined);
     return this.datasetService.getAtpPerformanceStoreDetail(dateFrom, dateTo, g, {
       region: split(region),
       tier: split(tier),
@@ -121,6 +136,11 @@ export class DatasetController {
       brand: split(brand),
       salesRep: split(salesRep),
       specification: split(specification),
+    }, {
+      feeLe10: num(feeLe10),
+      feeGt15: num(feeGt15),
+      salesLt1000: num(salesLt1000),
+      salesLt2000: num(salesLt2000),
     });
   }
 

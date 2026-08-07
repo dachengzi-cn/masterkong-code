@@ -3,6 +3,16 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Empty,
   EmptyHeader,
@@ -18,6 +28,7 @@ import type {
   AtpPerformanceRow,
   AtpPerformanceStoreRow,
   AtpPerformanceStoreDetailResponse,
+  AtpThresholdParams,
   HeatmapFilterParams,
 } from '@shared/api.interface';
 
@@ -60,29 +71,43 @@ interface ColumnDef {
   headerBg?: string;
 }
 
-const COLUMNS: ColumnDef[] = [
-  { key: 'region', label: '所别', align: 'left' },
-  { key: 'tier', label: '阶层', align: 'left' },
-  { key: 'salesRep', label: '业代', align: 'left' },
-  { key: 'totalPoints', label: '总点数', align: 'right', format: formatInt },
-  { key: 'paidPoints', label: '付费点数', align: 'right', format: formatInt },
-  { key: 'paidAmount', label: '付费金额', align: 'right', format: formatCurrency },
-  { key: 'totalStoreSales', label: '总门店销额', align: 'right', format: formatCurrency },
-  { key: 'paidPointFeeRatio', label: '投入费比', align: 'right', format: formatPercent, drill: 'paidPointFeeRatio' },
-  { key: 'feeRatioLe10', label: '费比≦10%', align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
-  { key: 'feeRatio10to15', label: '10%<费比≦15%', align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
-  { key: 'feeRatioGt15', label: '费比>15%', align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
-  { key: 'feeRatioNoDeal', label: '未成交', align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
-  { key: 'feeRatioLe10Ratio', label: '费比≦10%点数占比', align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
-  { key: 'feeRatio10to15Ratio', label: '10%<费比≦15%点数占比', align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
-  { key: 'feeRatioGt15Ratio', label: '费比>15%点数占比', align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
-  { key: 'feeRatioNoDealRatio', label: '未成交点数占比', align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
-  { key: 'paidPointSalesRatio', label: '付费点销额占比', align: 'right', format: formatPercent, drill: 'paidPointSalesRatio' },
-  { key: 'salesLt1000Count', label: '销额<1000元点数', align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
-  { key: 'salesLt1000Ratio', label: '销额<1000元占比', align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
-  { key: 'salesLt2000Count', label: '销额<2000元点数', align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
-  { key: 'salesLt2000Ratio', label: '销额<2000元占比', align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
-];
+/** 自定义参数系统默认值（与后端硬编码一致） */
+const DEFAULT_THRESHOLDS: Required<AtpThresholdParams> = {
+  feeLe10: 0.1,
+  feeGt15: 0.15,
+  salesLt1000: 1000,
+  salesLt2000: 2000,
+};
+
+/** 根据自定义参数动态生成表头列（费比/销额阈值随参数实时变化） */
+const buildColumns = (thresholds: AtpThresholdParams): ColumnDef[] => {
+  const t = { ...DEFAULT_THRESHOLDS, ...thresholds };
+  const le10 = Math.round(t.feeLe10 * 100);
+  const gt15 = Math.round(t.feeGt15 * 100);
+  return [
+    { key: 'region', label: '所别', align: 'left' },
+    { key: 'tier', label: '阶层', align: 'left' },
+    { key: 'salesRep', label: '业代', align: 'left' },
+    { key: 'totalPoints', label: '总点数', align: 'right', format: formatInt },
+    { key: 'paidPoints', label: '付费点数', align: 'right', format: formatInt },
+    { key: 'paidAmount', label: '付费金额', align: 'right', format: formatCurrency },
+    { key: 'totalStoreSales', label: '总门店销额', align: 'right', format: formatCurrency },
+    { key: 'paidPointFeeRatio', label: '投入费比', align: 'right', format: formatPercent, drill: 'paidPointFeeRatio' },
+    { key: 'feeRatioLe10', label: `费比≦${le10}%`, align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
+    { key: 'feeRatio10to15', label: `${le10}%<费比≦${gt15}%`, align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
+    { key: 'feeRatioGt15', label: `费比>${gt15}%`, align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
+    { key: 'feeRatioNoDeal', label: '未成交', align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
+    { key: 'feeRatioLe10Ratio', label: `费比≦${le10}%点数占比`, align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
+    { key: 'feeRatio10to15Ratio', label: `${le10}%<费比≦${gt15}%点数占比`, align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
+    { key: 'feeRatioGt15Ratio', label: `费比>${gt15}%点数占比`, align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
+    { key: 'feeRatioNoDealRatio', label: '未成交点数占比', align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
+    { key: 'paidPointSalesRatio', label: '付费点销额占比', align: 'right', format: formatPercent, drill: 'paidPointSalesRatio' },
+    { key: 'salesLt1000Count', label: `销额<${t.salesLt1000}元点数`, align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
+    { key: 'salesLt1000Ratio', label: `销额<${t.salesLt1000}元占比`, align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
+    { key: 'salesLt2000Count', label: `销额<${t.salesLt2000}元点数`, align: 'right', format: formatInt, headerBg: 'hsl(217, 85%, 90%)' },
+    { key: 'salesLt2000Ratio', label: `销额<${t.salesLt2000}元占比`, align: 'right', format: formatPercent, headerBg: 'hsl(217, 85%, 80%)' },
+  ];
+};
 
 interface StoreColumnDef {
   key: keyof AtpPerformanceStoreRow;
@@ -93,21 +118,24 @@ interface StoreColumnDef {
   headerBg?: string;
 }
 
-const STORE_COLUMNS: StoreColumnDef[] = [
-  { key: 'region', label: '所别', align: 'left' },
-  { key: 'tier', label: '阶层', align: 'left' },
-  { key: 'salesRep', label: '业代', align: 'left' },
-  { key: 'customerName', label: '门店名', align: 'left' },
-  { key: 'customerCode', label: '门店编码', align: 'left' },
-  ...(COLUMNS.slice(3).map((c) => ({
-    key: c.key as keyof AtpPerformanceStoreRow,
-    label: c.label,
-    align: c.align,
-    format: c.format,
-    drill: c.drill,
-    headerBg: c.headerBg,
-  })) as StoreColumnDef[]),
-];
+const buildStoreColumns = (thresholds: AtpThresholdParams): StoreColumnDef[] => {
+  const base = buildColumns(thresholds);
+  return [
+    { key: 'region', label: '所别', align: 'left' },
+    { key: 'tier', label: '阶层', align: 'left' },
+    { key: 'salesRep', label: '业代', align: 'left' },
+    { key: 'customerName', label: '门店名', align: 'left' },
+    { key: 'customerCode', label: '门店编码', align: 'left' },
+    ...(base.slice(3).map((c) => ({
+      key: c.key as keyof AtpPerformanceStoreRow,
+      label: c.label,
+      align: c.align,
+      format: c.format,
+      drill: c.drill,
+      headerBg: c.headerBg,
+    })) as StoreColumnDef[]),
+  ];
+};
 
 interface StoreMonthlyDrillData {
   months: string[];
@@ -248,29 +276,40 @@ const monthToDateRange = (month: string): { from: string; to: string } => {
   return { from, to };
 };
 
-const HEADER_WRAPS: Record<string, string[]> = {
-  '投入费比': ['投入费比'],
-  '付费点销额占比': ['付费点销额', '占比'],
-  '总门店销额': ['总门店', '销额'],
-  '付费金额': ['付费', '金额'],
-  '付费点数': ['付费', '点数'],
-  '总点数': ['总', '点数'],
-  '费比≦10%': ['费比', '≦10%'],
-  '10%<费比≦15%': ['10%<费比', '≦15%'],
-  '费比>15%': ['费比', '>15%'],
-  '未成交': ['未', '成交'],
-  '费比≦10%点数占比': ['费比≦10%', '点数占比'],
-  '10%<费比≦15%点数占比': ['10%<费比≦15%', '点数占比'],
-  '费比>15%点数占比': ['费比>15%', '点数占比'],
-  '未成交点数占比': ['未成交', '点数占比'],
-  '销额<1000元点数': ['销额<1000', '元点数'],
-  '销额<1000元占比': ['销额<1000', '元占比'],
-  '销额<2000元点数': ['销额<2000', '元点数'],
-  '销额<2000元占比': ['销额<2000', '元占比'],
+/** 根据自定义参数动态生成表头换行规则（随阈值变化同步更新） */
+const buildHeaderWraps = (thresholds: AtpThresholdParams): Record<string, string[]> => {
+  const t = { ...DEFAULT_THRESHOLDS, ...thresholds };
+  const le10 = Math.round(t.feeLe10 * 100);
+  const gt15 = Math.round(t.feeGt15 * 100);
+  const l1000 = t.salesLt1000;
+  const l2000 = t.salesLt2000;
+  return {
+    '投入费比': ['投入费比'],
+    '付费点销额占比': ['付费点销额', '占比'],
+    '总门店销额': ['总门店', '销额'],
+    '付费金额': ['付费', '金额'],
+    '付费点数': ['付费', '点数'],
+    '总点数': ['总', '点数'],
+    [`费比≦${le10}%`]: ['费比', `≦${le10}%`],
+    [`${le10}%<费比≦${gt15}%`]: [`${le10}%<费比`, `≦${gt15}%`],
+    [`费比>${gt15}%`]: ['费比', `>${gt15}%`],
+    '未成交': ['未', '成交'],
+    [`费比≦${le10}%点数占比`]: [`费比≦${le10}%`, '点数占比'],
+    [`${le10}%<费比≦${gt15}%点数占比`]: [`${le10}%<费比≦${gt15}%`, '点数占比'],
+    [`费比>${gt15}%点数占比`]: [`费比>${gt15}%`, '点数占比'],
+    '未成交点数占比': ['未成交', '点数占比'],
+    [`销额<${l1000}元点数`]: [`销额<${l1000}`, '元点数'],
+    [`销额<${l1000}元占比`]: [`销额<${l1000}`, '元占比'],
+    [`销额<${l2000}元点数`]: [`销额<${l2000}`, '元点数'],
+    [`销额<${l2000}元占比`]: [`销额<${l2000}`, '元占比'],
+  };
 };
 
-const renderWrappedLabel = (label: string): React.ReactNode => {
-  const lines = HEADER_WRAPS[label] ?? [label];
+const renderWrappedLabel = (
+  label: string,
+  wraps: Record<string, string[]>,
+): React.ReactNode => {
+  const lines = wraps[label] ?? [label];
   return lines.map((line, i) => (
     <React.Fragment key={i}>
       {i > 0 && <br />}
@@ -612,7 +651,64 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
   });
   const [collapseMode, setCollapseMode] = useState<'none' | 'region' | 'tier'>('none');
   const [hoveredHeader, setHoveredHeader] = useState<string | null>(null);
-  const [totalExpand, setTotalExpand] = useState(false);
+  const [expandRegionDetail, setExpandRegionDetail] = useState(false);
+  // 自定义分档参数（默认与系统一致）
+  const [thresholds, setThresholds] = useState<AtpThresholdParams>({ ...DEFAULT_THRESHOLDS });
+  const [thresholdDialogOpen, setThresholdDialogOpen] = useState(false);
+  const [thresholdDraft, setThresholdDraft] = useState<
+    Record<'feeLe10' | 'feeGt15' | 'salesLt1000' | 'salesLt2000', string>
+  >({
+    feeLe10: '10',
+    feeGt15: '15',
+    salesLt1000: '1000',
+    salesLt2000: '2000',
+  });
+
+  const openThresholdDialog = useCallback(() => {
+    setThresholdDraft({
+      feeLe10: String(Math.round((thresholds.feeLe10 ?? DEFAULT_THRESHOLDS.feeLe10) * 100)),
+      feeGt15: String(Math.round((thresholds.feeGt15 ?? DEFAULT_THRESHOLDS.feeGt15) * 100)),
+      salesLt1000: String(thresholds.salesLt1000 ?? DEFAULT_THRESHOLDS.salesLt1000),
+      salesLt2000: String(thresholds.salesLt2000 ?? DEFAULT_THRESHOLDS.salesLt2000),
+    });
+    setThresholdDialogOpen(true);
+  }, [thresholds]);
+
+  const saveThresholds = useCallback(() => {
+    const parseNum = (s: string, fallback: number) => {
+      const v = parseFloat(s);
+      return Number.isFinite(v) && v >= 0 ? v : fallback;
+    };
+    setThresholds({
+      feeLe10: parseNum(thresholdDraft.feeLe10, DEFAULT_THRESHOLDS.feeLe10) / 100,
+      feeGt15: parseNum(thresholdDraft.feeGt15, DEFAULT_THRESHOLDS.feeGt15) / 100,
+      salesLt1000: parseNum(thresholdDraft.salesLt1000, DEFAULT_THRESHOLDS.salesLt1000),
+      salesLt2000: parseNum(thresholdDraft.salesLt2000, DEFAULT_THRESHOLDS.salesLt2000),
+    });
+    setThresholdDialogOpen(false);
+    toast.success('自定义参数已保存，统计与导出将按新参数重新计算');
+  }, [thresholdDraft]);
+
+  const resetThresholds = useCallback(() => {
+    setThresholdDraft({
+      feeLe10: String(Math.round(DEFAULT_THRESHOLDS.feeLe10 * 100)),
+      feeGt15: String(Math.round(DEFAULT_THRESHOLDS.feeGt15 * 100)),
+      salesLt1000: String(DEFAULT_THRESHOLDS.salesLt1000),
+      salesLt2000: String(DEFAULT_THRESHOLDS.salesLt2000),
+    });
+  }, []);
+
+  const updateThresholdDraft = useCallback(
+    (key: keyof typeof thresholdDraft, value: string) => {
+      setThresholdDraft((prev) => ({ ...prev, [key]: value }));
+    },
+    [],
+  );
+
+  // 基于当前自定义参数动态生成表头列与换行规则
+  const columns = useMemo(() => buildColumns(thresholds), [thresholds]);
+  const storeColumns = useMemo(() => buildStoreColumns(thresholds), [thresholds]);
+  const headerWraps = useMemo(() => buildHeaderWraps(thresholds), [thresholds]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -624,6 +720,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
         dateTo,
         'day',
         filters,
+        thresholds,
       );
       setData(result);
     } catch (err: unknown) {
@@ -634,7 +731,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       setLoading(false);
       onLoadingChange?.(false);
     }
-  }, [dateFrom, dateTo, filters, onLoadingChange]);
+  }, [dateFrom, dateTo, filters, thresholds, onLoadingChange]);
 
   // Only fire a query when the user has explicitly confirmed filters
   useEffect(() => {
@@ -705,20 +802,24 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
   }, [displayRows]);
 
   const visibleRows = useMemo<DisplayRow[]>(() => {
-    if (!totalExpand) {
-      return displayRows.filter((r) => r.rowType !== 'data');
+    if (collapseMode === 'tier') {
+      return displayRows.filter(
+        (r) => r.rowType !== 'data' || r.tier === '一阶' || r.tier === '二阶',
+      );
     }
-    if (collapseMode === 'none') return displayRows;
-    if (collapseMode === 'region') {
-      return displayRows.filter((r) => r.rowType !== 'data');
+    if (expandRegionDetail) {
+      return displayRows;
     }
-    return displayRows.filter(
-      (r) => r.rowType !== 'data' || r.tier === '一阶' || r.tier === '二阶',
-    );
-  }, [displayRows, collapseMode, totalExpand]);
+    return displayRows.filter((r) => r.rowType !== 'data');
+  }, [displayRows, collapseMode, expandRegionDetail]);
 
   const toggleCollapse = useCallback((mode: 'region' | 'tier') => {
     setCollapseMode((prev) => (prev === mode ? 'none' : mode));
+  }, []);
+
+  // 点击「所别」表头：展开/折叠所别明细
+  const toggleRegionDetail = useCallback(() => {
+    setExpandRegionDetail((v) => !v);
   }, []);
 
   const loadDrill = useCallback(async (metric: DrillMetric) => {
@@ -733,6 +834,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
             monthToDateRange(m).to,
             'day',
             filters,
+            thresholds,
           ),
         ),
       );
@@ -744,7 +846,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
     } finally {
       setDrillLoading((prev) => ({ ...prev, [metric]: false }));
     }
-  }, [dateTo, filters]);
+  }, [dateTo, filters, thresholds]);
 
   const toggleDrill = useCallback((metric: DrillMetric) => {
     setExpanded((prev) => {
@@ -755,6 +857,18 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       return next;
     });
   }, [monthlyData, loadDrill]);
+
+  // 自定义参数变化后：清空旧的下钻数据，并对已展开的指标重新按新参数计算
+  useEffect(() => {
+    setMonthlyData({ paidPointFeeRatio: null, paidPointSalesRatio: null });
+    for (const metric of ['paidPointFeeRatio', 'paidPointSalesRatio'] as DrillMetric[]) {
+      if (expanded[metric]) {
+        loadDrill(metric);
+      }
+    }
+    // 仅当 thresholds 引用变化时触发（保存参数后）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thresholds]);
 
   const handleExport = useCallback(async () => {
     if (!visibleRows.length || exporting) return;
@@ -782,7 +896,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
         | { type: 'drill'; metric: DrillMetric; month: string; monthIndex: number };
 
       const exportCols: ExportCol[] = [];
-      for (const col of COLUMNS) {
+      for (const col of columns) {
         exportCols.push({ type: 'base', col });
         if (col.drill && expanded[col.drill]) {
           const drill = monthlyData[col.drill];
@@ -938,6 +1052,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
         dateTo,
         'day',
         filters,
+        thresholds,
       );
 
       // 构建门店导出列：基础列 + 展开的下钻月度列
@@ -946,7 +1061,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
         | { type: 'drill'; metric: DrillMetric; month: string; monthIndex: number };
 
       const storeExportCols: StoreExportCol[] = [];
-      for (const col of STORE_COLUMNS) {
+      for (const col of storeColumns) {
         storeExportCols.push({ type: 'base', col });
         if (col.drill && expanded[col.drill]) {
           const drill = monthlyData[col.drill];
@@ -963,7 +1078,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       }
 
       // 若主表展开了下钻列，同步获取门店级月度明细
-      const needStoreDrill = STORE_COLUMNS.some((c) => c.drill && expanded[c.drill]);
+      const needStoreDrill = storeColumns.some((c) => c.drill && expanded[c.drill]);
       const storeMonthCount = countMonths(
         String(dateFrom ?? '').slice(0, 7),
         String(dateTo ?? '').slice(0, 7),
@@ -982,6 +1097,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
               monthToDateRange(m).to,
               'day',
               filters,
+              thresholds,
             ),
           ),
         );
@@ -1134,7 +1250,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
     } finally {
       setExporting(false);
     }
-  }, [visibleRows, exporting, dateFrom, dateTo, expanded, monthlyData, regionRatios, filters]);
+  }, [visibleRows, exporting, dateFrom, dateTo, expanded, monthlyData, regionRatios, filters, thresholds]);
 
   const isEmpty = baseRows.length === 0 && !loading && !error;
 
@@ -1183,15 +1299,11 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
               <h3 className="text-sm font-bold text-foreground">ATP绩效</h3>
               <Button
                 variant="outline"
-                onClick={() => setTotalExpand((v) => !v)}
-                className="h-8 w-[120px] rounded-full px-3 text-xs font-normal gap-1.5 hover:bg-[hsl(152,60%,42%)] hover:text-white hover:border-[hsl(152,60%,42%)]"
+                onClick={openThresholdDialog}
+                className="h-8 rounded-full px-3 text-xs font-normal gap-1.5 hover:bg-[hsl(152,60%,42%)] hover:text-white hover:border-[hsl(152,60%,42%)]"
               >
-                {totalExpand ? '缩放合计' : '展开明细'}
-                {totalExpand ? (
-                  <span className="inline-flex items-center justify-center text-base leading-none" >⇅</span>
-                ) : (
-                  <span className="inline-flex items-center justify-center text-base leading-none" >⇅</span>
-                )}
+                <span className="inline-flex items-center justify-center text-base leading-none" >⚙️</span>
+                自定义参数
               </Button>
             </div>
             <Button
@@ -1204,6 +1316,80 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
               {exporting ? '导出中...' : '导出ATP绩效'}
             </Button>
           </div>
+
+          {/* 自定义参数编辑弹窗 */}
+          <Dialog open={thresholdDialogOpen} onOpenChange={setThresholdDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-base">自定义参数</DialogTitle>
+                <DialogDescription className="text-xs">
+                  设置费比分档与销额阈值，保存后统计与导出将按新参数重新计算。
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-1">
+                <div className="flex items-center gap-3">
+                  <Label className="w-36 shrink-0 text-xs text-foreground">费比 ≦ X%</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={thresholdDraft.feeLe10}
+                    onChange={(e) => updateThresholdDraft('feeLe10', e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                  <span className="shrink-0 text-xs text-muted-foreground">%</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label className="w-36 shrink-0 text-xs text-foreground">费比 &gt; Y%</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={thresholdDraft.feeGt15}
+                    onChange={(e) => updateThresholdDraft('feeGt15', e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                  <span className="shrink-0 text-xs text-muted-foreground">%</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label className="w-36 shrink-0 text-xs text-foreground">销额 &lt; A 元</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={thresholdDraft.salesLt1000}
+                    onChange={(e) => updateThresholdDraft('salesLt1000', e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                  <span className="shrink-0 text-xs text-muted-foreground">元</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label className="w-36 shrink-0 text-xs text-foreground">销额 &lt; B 元</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={thresholdDraft.salesLt2000}
+                    onChange={(e) => updateThresholdDraft('salesLt2000', e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                  <span className="shrink-0 text-xs text-muted-foreground">元</span>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetThresholds}
+                  className="mr-auto text-muted-foreground"
+                >
+                  恢复默认
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setThresholdDialogOpen(false)}>
+                  取消
+                </Button>
+                <Button size="sm" onClick={saveThresholds}>
+                  保存
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <style>{`
             @keyframes atp-header-shake {
@@ -1222,25 +1408,27 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
             <table className="w-full border-collapse text-xs">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-accent/50">
-                  {COLUMNS.map((col) => {
+                  {columns.map((col) => {
                     const clickable = !!col.drill;
                     const isExpanded = col.drill ? expanded[col.drill] : false;
                     const isLoading = col.drill ? drillLoading[col.drill] : false;
                     const isRegionCol = col.label === '所别';
                     const isTierCol = col.label === '阶层';
                     const isCollapseHeader = isRegionCol || isTierCol;
-                    const collapseActive =
-                      (isRegionCol && collapseMode === 'region') ||
-                      (isTierCol && collapseMode === 'tier');
+                    const regionDetailActive = isRegionCol && expandRegionDetail;
+                    const tierActive = isTierCol && collapseMode === 'tier';
+                    const collapseActive = regionDetailActive || tierActive;
                     return (
                       <React.Fragment key={col.key}>
                         <th
                           onClick={
                             clickable
                               ? () => toggleDrill(col.drill as DrillMetric)
-                              : isCollapseHeader
-                                ? () => toggleCollapse(isRegionCol ? 'region' : 'tier')
-                                : undefined
+                              : isRegionCol
+                                ? toggleRegionDetail
+                                : isTierCol
+                                  ? () => toggleCollapse('tier')
+                                  : undefined
                           }
                           onMouseEnter={() =>
                             (clickable || isCollapseHeader) && setHoveredHeader(col.key)
@@ -1269,7 +1457,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                                   : undefined,
                             }}
                           >
-                            <span className="text-center">{renderWrappedLabel(col.label)}</span>
+                            <span className="text-center">{renderWrappedLabel(col.label, headerWraps)}</span>
                             {clickable &&
                               (isLoading ? (
                                 <span className="inline-flex items-center justify-center text-base leading-none text-muted-foreground animate-spin" >⏳</span>
@@ -1323,7 +1511,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                       ].join(' ')}
                       style={{ backgroundColor: bgColor }}
                     >
-                      {COLUMNS.map((col) => {
+                      {columns.map((col) => {
                         const raw = row[col.key];
                         const text =
                           typeof raw === 'number' && col.format

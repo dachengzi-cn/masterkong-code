@@ -88,7 +88,7 @@ const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cu
   const committedDateFrom = committedDateRange ? formatDateStr(committedDateRange.from) : null;
   const committedDateTo = committedDateRange ? formatDateStr(committedDateRange.to) : null;
 
-  const pageScope = mode === 'daily' ? 'daily' : 'cumulative';
+  const pageScope = mode === 'daily' ? 'dashboard/daily' : 'dashboard/cumulative';
 
   // 为 AI 分析准备输入数据
   const aiInputData = useMemo(() => {

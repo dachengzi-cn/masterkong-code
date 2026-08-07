@@ -300,14 +300,14 @@ export function AiAnalysisPanel({
   return (
     <>
       <Button
-        variant="outline"
+        variant="default"
         size={size}
         className={cn(
-          "rounded-full transition-all duration-150 ease-out relative overflow-hidden",
-          isExecuting && "border-primary text-primary",
-          isCompleted && "border-success text-success hover:bg-success hover:text-white",
-          isFailed && "border-error text-error",
-          !isExecuting && !isCompleted && !isFailed && "border-primary text-primary hover:bg-primary hover:text-primary-foreground",
+          "rounded-md transition-all duration-150 ease-out relative overflow-hidden",
+          isExecuting && "ai-rainbow-btn",
+          isCompleted && "border-success/40 bg-success/10 text-success shadow-[0_0_10px_hsl(152,60%,42%,0.45),0_0_20px_hsl(152,60%,42%,0.2)] hover:bg-success hover:text-white",
+          isFailed && "bg-error text-white",
+          !isExecuting && !isCompleted && !isFailed && "bg-primary text-primary-foreground hover:bg-primary/90",
           className,
         )}
         onClick={() => {
@@ -324,12 +324,14 @@ export function AiAnalysisPanel({
       >
         {isExecuting ? (
           <>
-            {/* 走马灯旋转光效 */}
-            <span className="absolute inset-0 rounded-full overflow-hidden">
-              <span className="absolute inset-[-100%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_0deg,transparent_0%,hsl(217,85%,52%)_25%,transparent_50%,hsl(217,85%,52%)_75%,transparent_100%)] opacity-30" />
+            {/* Uiverse 彩虹霓虹光效（保持按钮尺寸不变） */}
+            <span className="glow" aria-hidden="true" />
+            <span className="glow" aria-hidden="true" />
+            <span className="display" aria-hidden="true" />
+            <span className="content">
+              <Loader2 className="size-4 animate-spin" />
+              <span className="msg">AI分析中</span>
             </span>
-            <Loader2 className="size-4 animate-spin relative z-10" />
-            <span className="relative z-10">分析中</span>
           </>
         ) : isCompleted ? (
           <>

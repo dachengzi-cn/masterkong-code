@@ -330,7 +330,7 @@ const ExpiryExpensePage: React.FC = () => {
           exportDisabled={loading || !data || displayData.kpis.totalAmount === 0}
           rightActions={
             <AiAnalysisPanel
-              pageScope="expiry"
+              pageScope="expense/expiry"
               inputData={aiInputData}
               defaultQuestion="请分析当前临期费用数据，识别费用趋势、区域分布与高风险规格/门店。"
               disabled={!data || loading}
@@ -366,7 +366,7 @@ const ExpiryExpensePage: React.FC = () => {
         exportDisabled={loading || !data || displayData.kpis.totalAmount === 0}
         rightActions={
           <AiAnalysisPanel
-            pageScope="expiry"
+            pageScope="expense/expiry"
             inputData={aiInputData}
             defaultQuestion="请分析当前临期费用数据，识别费用趋势、区域分布与高风险规格/门店。"
             disabled={!data || loading}

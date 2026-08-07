@@ -27,6 +27,7 @@ import type {
   AtpPerformanceResponse,
   AtpPerformanceStoreDetailResponse,
   AtpAvailableMonthsResponse,
+  AtpThresholdParams,
 } from '@shared/api.interface';
 
 export async function getDatasets(params?: GetDatasetsParams) {
@@ -303,6 +304,7 @@ export async function getAtpPerformance(
   dateTo: string,
   granularity: TimeGranularity,
   filters?: HeatmapFilterParams,
+  thresholds?: AtpThresholdParams,
 ) {
   const params: Record<string, string | number> = { dateFrom, dateTo, granularity };
   if (filters) {
@@ -310,6 +312,13 @@ export async function getAtpPerformance(
       if (Array.isArray(val) && val.length > 0) {
         params[key] = val.join(',');
       } else if (typeof val === 'string' && val) {
+        params[key] = val;
+      }
+    }
+  }
+  if (thresholds) {
+    for (const [key, val] of Object.entries(thresholds)) {
+      if (val !== undefined && val !== null) {
         params[key] = val;
       }
     }
@@ -327,6 +336,7 @@ export async function getAtpPerformanceStoreDetail(
   dateTo: string,
   granularity: TimeGranularity,
   filters?: HeatmapFilterParams,
+  thresholds?: AtpThresholdParams,
 ) {
   const params: Record<string, string | number> = { dateFrom, dateTo, granularity };
   if (filters) {
@@ -334,6 +344,13 @@ export async function getAtpPerformanceStoreDetail(
       if (Array.isArray(val) && val.length > 0) {
         params[key] = val.join(',');
       } else if (typeof val === 'string' && val) {
+        params[key] = val;
+      }
+    }
+  }
+  if (thresholds) {
+    for (const [key, val] of Object.entries(thresholds)) {
+      if (val !== undefined && val !== null) {
         params[key] = val;
       }
     }

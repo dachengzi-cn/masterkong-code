@@ -230,6 +230,14 @@ export class SkillPreprocessor {
   }
 
   /**
+   * 归一化 pageScope：兼容完整路径（dashboard/cumulative）与简写（cumulative）
+   * 内置技能的字段期望表使用简写作为 key，而前端路由使用完整路径
+   */
+  private normalizePageScope(pageScope: string): string {
+    return pageScope.split('/').pop() ?? pageScope;
+  }
+
+  /**
    * 检测关键字段缺失
    */
   private checkRequiredFields(
@@ -238,7 +246,8 @@ export class SkillPreprocessor {
     anomalies: DataAnomaly[],
     warnings: string[],
   ): void {
-    const required = this.REQUIRED_FIELDS_BY_PAGE[pageScope];
+    const normalized = this.normalizePageScope(pageScope);
+    const required = this.REQUIRED_FIELDS_BY_PAGE[normalized];
     if (!required) return;
 
     for (const field of required) {
@@ -413,6 +422,7 @@ export class SkillPreprocessor {
     const parts: string[] = [];
 
     if (pageScope) {
+      const normalized = this.normalizePageScope(pageScope);
       const pageNames: Record<string, string> = {
         cumulative: '累计成交分析',
         daily: '当日成交分析',
@@ -420,7 +430,7 @@ export class SkillPreprocessor {
         expiry: '临期费用分析',
         atp: 'ATP费用分析',
       };
-      parts.push(pageNames[pageScope] ?? pageScope);
+      parts.push(pageNames[normalized] ?? pageScope);
     }
 
     parts.push(`包含 ${fieldCount} 个字段`);

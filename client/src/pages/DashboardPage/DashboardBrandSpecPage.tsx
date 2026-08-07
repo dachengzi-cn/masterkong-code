@@ -243,7 +243,7 @@ const DashboardBrandSpecPage: React.FC = () => {
         showDownloadUnconverted={false}
         rightActions={
           <AiAnalysisPanel
-            pageScope="brand-spec"
+            pageScope="dashboard/brand-spec"
             inputData={aiInputData}
             defaultQuestion="请分析当前品牌规格成交数据，识别各品牌/规格的成交覆盖情况与组合机会。"
             disabled={!tableData}

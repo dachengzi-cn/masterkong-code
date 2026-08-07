@@ -856,6 +856,18 @@ export interface AtpPerformanceResponse {
   rows: AtpPerformanceRow[];
 }
 
+/** ATP 绩效自定义分档参数（费比/销额阈值），未传时使用系统默认值 */
+export interface AtpThresholdParams {
+  /** 费比≦X 上界（小数），默认 0.1 */
+  feeLe10?: number;
+  /** 费比>Y 下界（小数），默认 0.15 */
+  feeGt15?: number;
+  /** 销额<X 元 阈值，默认 1000 */
+  salesLt1000?: number;
+  /** 销额<Y 元 阈值，默认 2000 */
+  salesLt2000?: number;
+}
+
 export interface AtpPerformanceStoreRow extends AtpPerformanceRow {
   customerName: string;
   customerCode: string;
