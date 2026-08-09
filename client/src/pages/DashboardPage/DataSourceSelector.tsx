@@ -54,24 +54,30 @@ const DataSourceSelector: React.FC<DataSourceSelectorProps> = ({ value, onChange
       >
         <span
           className={cn(
-            'flex size-3.5 items-center justify-center rounded-sm border transition-colors',
+            'relative flex size-3.5 items-center justify-center rounded-sm border [perspective:40px]',
             isSelected
-              ? 'border-primary bg-primary'
+              ? 'border-primary'
               : isOtherSelected
                 ? 'border-muted-foreground/20 bg-muted/20'
                 : 'border-border',
           )}
         >
-          {isSelected && (
-            <svg viewBox="0 0 12 12" className="size-2.5 text-primary-foreground" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="2,6 5,9 10,3" />
-            </svg>
-          )}
+          {/* Uiverse 3D 翻转动效：仅替换选中态切换动画，不改变复选框尺寸/形状 */}
+          <span
+            className={cn(
+              'absolute inset-0 rounded-sm transition-transform duration-[400ms] ease-out [transform-style:preserve-3d]',
+              isSelected && '[transform:rotateY(180deg)]',
+            )}
+          >
+            <span className="absolute inset-0 rounded-sm bg-transparent [backface-visibility:hidden]" />
+            <span className="absolute inset-0 flex items-center justify-center rounded-sm bg-primary [backface-visibility:hidden] [transform:rotateY(180deg)]">
+              <svg viewBox="0 0 12 12" className="size-2.5 text-primary-foreground" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="2,6 5,9 10,3" />
+              </svg>
+            </span>
+          </span>
         </span>
         {option}
-        {isOtherSelected && (
-          <span className="ml-0.5 text-[10px] text-muted-foreground/40">已选其他</span>
-        )}
       </button>
     );
   };
