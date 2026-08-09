@@ -21,6 +21,7 @@ import type {
   BrandSpecStatsResponse,
   BrandSpecMonthlyStatsResponse,
   SalesRepDrilldownResponse,
+  SalesRepUnconvertedDrilldownResponse,
   SystemStatusResponse,
   CheckDuplicatesRequest,
   CheckDuplicatesResponse,
@@ -352,6 +353,17 @@ export class DatasetController {
     @Query('dateTo') dateTo: string,
   ): Promise<SalesRepDrilldownResponse> {
     return this.datasetService.getSalesRepDrilldown(id, salesRep, region, tier, dateFrom, dateTo);
+  }
+
+  @Get(':id/sales-rep-unconverted-drilldown')
+  async getSalesRepUnconvertedDrilldown(
+    @Param('id') id: string,
+    @Query('salesRep') salesRep: string,
+    @Query('region') region: string,
+    @Query('tier') tier: string,
+    @Query('dateTo') dateTo: string,
+  ): Promise<SalesRepUnconvertedDrilldownResponse> {
+    return this.datasetService.getSalesRepUnconvertedDrilldown(id, salesRep, region, tier, dateTo);
   }
 
 }

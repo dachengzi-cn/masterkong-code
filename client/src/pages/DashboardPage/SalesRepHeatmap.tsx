@@ -13,7 +13,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '@/components/ui/empty';
-import { datasetApi } from '@client/src/api/index';
+import { datasetApi, reportApi } from '@client/src/api/index';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import type {
   HeatmapResponse,
@@ -24,11 +24,12 @@ import type {
   HeatmapFilterParams,
   TimeGranularity,
   SalesRepDrilldownResponse,
+  ReportRow,
+  ReportSheetData,
+  ReportCellStyle,
 } from '@shared/api.interface';
 import DrilldownRow from './DrilldownRow';
 import { extractChineseName } from './tableFormat';
-
-type CellStyle = Record<string, unknown>;
 
 interface SalesRepHeatmapProps {
   datasetId: string;
@@ -173,7 +174,7 @@ function hslToHex(h: number, s: number, l: number): string {
   return `${toH(r)}${toH(g)}${toH(b)}`;
 }
 
-function rateCellStyle(rate: number | null, isBottom30: boolean): CellStyle {
+function rateCellStyle(rate: number | null, isBottom30: boolean): ReportCellStyle {
   const textHsl = getRateText(rate, isBottom30);
   const bgHsl = getRateBg(rate);
   const tm = textHsl.match(/hsl\(([^,]+),\s*([^%]+)%,\s*([^%]+)%\)/);
@@ -436,13 +437,8 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
     setExporting(true);
 
     try {
-      // Dynamic import for code splitting
-      const XLSX = await import('xlsx-js-style').then(m => m.default || m);
-
-      const wb = XLSX.utils.book_new();
-
       // 通用样式定义（导出成交率和下钻数据都需要）
-      const headerStyle: CellStyle = {
+      const headerStyle: ReportCellStyle = {
         fill: { fgColor: { rgb: hslToHex(217, 40, 95) } },
         font: { bold: true, sz: 10, color: { rgb: '1A2433' } },
         alignment: { horizontal: 'center', vertical: 'center' },
@@ -453,7 +449,7 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
           right: { style: 'thin', color: { rgb: 'D0D5DD' } },
         },
       };
-      const fixedCellStyle: CellStyle = {
+      const fixedCellStyle: ReportCellStyle = {
         font: { sz: 10, color: { rgb: '1A2433' } },
         alignment: { vertical: 'center' },
         border: {
@@ -464,65 +460,55 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
         },
       };
 
+      const sheets: ReportSheetData[] = [];
+
       // 导出业代累计成交率 Sheet
       if (exportRate) {
-        const ws = XLSX.utils.aoa_to_sheet([]);
-      const colLabels = columns.map((c: HeatmapColumnHeader) => c.label);
-      const headers = ['所别', '阶层', '业代', '点数', '合计箱数', ...colLabels];
-      XLSX.utils.sheet_add_aoa(ws, [headers], { origin: 'A1' });
-      for (let c = 0; c < headers.length; c++) {
-        const cell = ws[XLSX.utils.encode_cell({ r: 0, c })] as Record<string, unknown>;
-        if (cell) cell.s = headerStyle;
-      }
-      displayRows.forEach((row: HeatmapRow, ri: number) => {
-        const isTotalRow = !!(row.rowType && row.rowType !== 'data');
-        let totalBg: string | null = null;
-        if (row.rowType === 'tier') totalBg = hslToHex(217, 60, 94);
-        else if (row.rowType === 'region') totalBg = hslToHex(220, 18, 92);
-        else if (row.rowType === 'total') totalBg = hslToHex(220, 18, 86);
-        const fixedStyle: CellStyle = {
-          ...fixedCellStyle,
-          font: { sz: 10, color: { rgb: '1A2433' }, bold: isTotalRow },
-          fill: { fgColor: { rgb: totalBg ?? (ri % 2 === 0 ? 'FFFFFF' : hslToHex(220, 18, 98)) } },
-        };
-        const vals: Array<string | number> = [row.region, row.tier, row.salesRep, row.servicePoints, row.totalOrders];
-        for (let c = 0; c < vals.length; c++) {
-          const ref = XLSX.utils.encode_cell({ r: ri + 1, c });
-          ws[ref] = { v: vals[c], t: typeof vals[c] === 'number' ? 'n' : 's', s: fixedStyle } as never;
-        }
-        columns.forEach((col: HeatmapColumnHeader, ci: number) => {
-          const dd = row.dailyData?.[ci];
-          const ref = XLSX.utils.encode_cell({ r: ri + 1, c: 5 + ci });
-          if (col.isHoliday && effectiveGranularity === 'day') {
-            const hs = rateCellStyle(null, false);
-            if (isTotalRow) {
-              const f = hs.font as Record<string, unknown> | undefined;
-              if (f) f.bold = true;
+        const colLabels = columns.map((c: HeatmapColumnHeader) => c.label);
+        const headers = ['所别', '阶层', '业代', '点数', '合计箱数', ...colLabels];
+        const rateRows: ReportRow[] = [
+          headers.map((h) => ({ v: h, s: headerStyle })),
+        ];
+        displayRows.forEach((row: HeatmapRow, ri: number) => {
+          const isTotalRow = !!(row.rowType && row.rowType !== 'data');
+          let totalBg: string | null = null;
+          if (row.rowType === 'tier') totalBg = hslToHex(217, 60, 94);
+          else if (row.rowType === 'region') totalBg = hslToHex(220, 18, 92);
+          else if (row.rowType === 'total') totalBg = hslToHex(220, 18, 86);
+          const fixedStyle: ReportCellStyle = {
+            ...fixedCellStyle,
+            font: { sz: 10, color: { rgb: '1A2433' }, bold: isTotalRow },
+            fill: { fgColor: { rgb: totalBg ?? (ri % 2 === 0 ? 'FFFFFF' : hslToHex(220, 18, 98)) } },
+          };
+          const vals: Array<string | number> = [row.region, row.tier, row.salesRep, row.servicePoints, row.totalOrders];
+          const rowCells: ReportRow = vals.map((v) => ({ v, s: fixedStyle }));
+          columns.forEach((col: HeatmapColumnHeader, ci: number) => {
+            const dd = row.dailyData?.[ci];
+            if (col.isHoliday && effectiveGranularity === 'day') {
+              const hs = rateCellStyle(null, false);
+              if (isTotalRow && hs.font) hs.font.bold = true;
+              rowCells.push({ v: '休', s: hs });
+            } else {
+              const rate = dd?.rate ?? null;
+              const isB30 = rate !== null && rate > 0 && rate <= (bottom30ByPeriod[col.index] ?? -1);
+              const rs = rateCellStyle(rate, isB30);
+              if (isTotalRow && rs.font) rs.font.bold = true;
+              rowCells.push({
+                v: rate !== null ? `${Math.round(rate * 100)}%` : '',
+                s: rs,
+              });
             }
-            ws[ref] = { v: '休', t: 's', s: hs } as never;
-          } else {
-            const rate = dd?.rate ?? null;
-            const isB30 = rate !== null && rate > 0 && rate <= (bottom30ByPeriod[col.index] ?? -1);
-            const rs = rateCellStyle(rate, isB30);
-            if (isTotalRow) {
-              const f = rs.font as Record<string, unknown> | undefined;
-              if (f) f.bold = true;
-            }
-            ws[ref] = {
-              v: rate !== null ? `${Math.round(rate * 100)}%` : '',
-              t: 's',
-              s: rs,
-            } as never;
-          }
+          });
+          rateRows.push(rowCells);
         });
-      });
-      const colWidths = [
-        { wch: 10 }, { wch: 6 }, { wch: 16 }, { wch: 6 }, { wch: 8 },
-        ...columns.map(() => ({ wch: 6 })),
-      ];
-      ws['!cols'] = colWidths;
-      ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: displayRows.length, c: headers.length - 1 } });
-      XLSX.utils.book_append_sheet(wb, ws, '业代成交率');
+        sheets.push({
+          sheetName: '业代成交率',
+          rows: rateRows,
+          colWidths: [
+            10, 6, 16, 6, 8,
+            ...columns.map(() => 6),
+          ],
+        });
       } // end exportRate
 
       // 累计模式且用户选择了下钻数据：新增"下钻数据"Sheet，形态/品牌/规格横向交叉表展示
@@ -563,37 +549,26 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
           if (maxDims === 0) maxDims = 1;
           const numCols = 5 + maxDims; // 所别/阶层/业代/下钻类型/指标 + 维度列
 
-          const drillWs = XLSX.utils.aoa_to_sheet([]);
           const drillTitle = `下钻数据（时间区间：${dateFrom.replace(/-/g, '/')} ~ ${dateTo.replace(/-/g, '/')}）`;
-          const merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> = [];
+          const merges: ReportSheetData['merges'] = [];
+          const drillRows: ReportRow[] = [];
 
           // 标题行
-          XLSX.utils.sheet_add_aoa(drillWs, [[drillTitle]], { origin: 'A1' });
+          drillRows.push([{ v: drillTitle, s: { font: { bold: true, sz: 12, color: { rgb: '1A2433' } }, alignment: { horizontal: 'center', vertical: 'center' } } }]);
           merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } });
-          const titleCell = drillWs[XLSX.utils.encode_cell({ r: 0, c: 0 })] as Record<string, unknown>;
-          if (titleCell) {
-            titleCell.s = {
-              font: { bold: true, sz: 12, color: { rgb: '1A2433' } },
-              alignment: { horizontal: 'center', vertical: 'center' },
-            };
-          }
 
           // 表头行
           const drillHeaders = ['所别', '阶层', '业代', '下钻类型', '指标'];
           for (let d = 0; d < maxDims; d++) drillHeaders.push(`维度${d + 1}`);
-          XLSX.utils.sheet_add_aoa(drillWs, [drillHeaders], { origin: 'A2' });
-          for (let c = 0; c < drillHeaders.length; c++) {
-            const cell = drillWs[XLSX.utils.encode_cell({ r: 1, c })] as Record<string, unknown>;
-            if (cell) cell.s = headerStyle;
-          }
+          drillRows.push(drillHeaders.map((h) => ({ v: h, s: headerStyle })));
 
           const grayBlue = hslToHex(220, 18, 92);
-          const dimHeaderStyle: CellStyle = {
+          const dimHeaderStyle: ReportCellStyle = {
             ...fixedCellStyle,
             font: { sz: 10, color: { rgb: '1A2433' }, bold: true },
             fill: { fgColor: { rgb: hslToHex(217, 40, 95) } },
           };
-          const rateStyle: CellStyle = {
+          const rateStyle: ReportCellStyle = {
             ...fixedCellStyle,
             font: { sz: 10, color: { rgb: '0D47A1' }, bold: true },
           };
@@ -619,40 +594,30 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
               const dimVals: Array<string | number> = [rep.region, rep.tier, rep.salesRep, section.type, ''];
               for (const item of section.items) dimVals.push(item.name);
               while (dimVals.length < numCols) dimVals.push('');
-              for (let c = 0; c < numCols; c++) {
-                const ref = XLSX.utils.encode_cell({ r: currentRow, c });
-                drillWs[ref] = { v: dimVals[c], t: 's', s: dimHeaderStyle } as never;
-              }
+              drillRows.push(dimVals.map((v) => ({ v, s: dimHeaderStyle })));
               currentRow++;
 
               // 点数行
               const ptsVals: Array<string | number> = ['', '', '', '', '点数'];
               for (const item of section.items) ptsVals.push(item.total);
               while (ptsVals.length < numCols) ptsVals.push('');
-              for (let c = 0; c < numCols; c++) {
-                const ref = XLSX.utils.encode_cell({ r: currentRow, c });
-                drillWs[ref] = { v: ptsVals[c], t: typeof ptsVals[c] === 'number' ? 'n' : 's', s: fixedCellStyle } as never;
-              }
+              drillRows.push(ptsVals.map((v) => ({ v, s: fixedCellStyle })));
               currentRow++;
 
               // 成交行
               const dealtVals: Array<string | number> = ['', '', '', '', '成交'];
               for (const item of section.items) dealtVals.push(item.dealt);
               while (dealtVals.length < numCols) dealtVals.push('');
-              for (let c = 0; c < numCols; c++) {
-                const ref = XLSX.utils.encode_cell({ r: currentRow, c });
-                drillWs[ref] = { v: dealtVals[c], t: typeof dealtVals[c] === 'number' ? 'n' : 's', s: fixedCellStyle } as never;
-              }
+              drillRows.push(dealtVals.map((v) => ({ v, s: fixedCellStyle })));
               currentRow++;
 
-              // 成交率行
+              // 成交率行（dealRate 后端已返回百分数值，直接使用）
               const rateVals: Array<string | number> = ['', '', '', '', '成交率'];
-              for (const item of section.items) rateVals.push(`${item.rate}%`);
-              while (rateVals.length < numCols) rateVals.push('');
-              for (let c = 0; c < numCols; c++) {
-                const ref = XLSX.utils.encode_cell({ r: currentRow, c });
-                drillWs[ref] = { v: rateVals[c], t: 's', s: rateStyle } as never;
+              for (const item of section.items) {
+                rateVals.push(item.rate != null ? `${item.rate}%` : '-');
               }
+              while (rateVals.length < numCols) rateVals.push('');
+              drillRows.push(rateVals.map((v) => ({ v, s: rateStyle })));
               currentRow++;
 
               // 合并下钻类型单元格（4 行）
@@ -665,35 +630,33 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
             merges.push({ s: { r: repStartRow, c: 2 }, e: { r: currentRow - 1, c: 2 } });
 
             // 灰蓝色空白分隔行
-            for (let c = 0; c < numCols; c++) {
-              const ref = XLSX.utils.encode_cell({ r: currentRow, c });
-              drillWs[ref] = { v: '', t: 's', s: { fill: { fgColor: { rgb: grayBlue } } } } as never;
-            }
+            const spacerStyle: ReportCellStyle = { fill: { fgColor: { rgb: grayBlue } } };
+            drillRows.push(new Array(numCols).fill(null).map(() => ({ v: '', s: spacerStyle })));
             currentRow++;
           }
 
           // 仅在有数据时添加 Sheet
           if (currentRow > 2) {
-            drillWs['!merges'] = merges;
-            const colWidths = [
-              { wch: 10 }, { wch: 6 }, { wch: 16 }, { wch: 8 }, { wch: 8 },
-            ];
-            for (let d = 0; d < maxDims; d++) colWidths.push({ wch: 12 });
-            drillWs['!cols'] = colWidths;
-            drillWs['!ref'] = XLSX.utils.encode_range({
-              s: { r: 0, c: 0 },
-              e: { r: currentRow - 1, c: numCols - 1 },
+            const colWidths = [10, 6, 16, 8, 8];
+            for (let d = 0; d < maxDims; d++) colWidths.push(12);
+            sheets.push({
+              sheetName: '下钻数据',
+              rows: drillRows,
+              colWidths,
+              merges,
             });
-            XLSX.utils.book_append_sheet(wb, drillWs, '下钻数据');
           }
         }
       }
 
-      XLSX.writeFile(wb, `${filters.mode === 'daily' ? '业代当日成交率' : '业代累计成交率'}_${timeLabel}.xlsx`);
-      const parts: string[] = [];
-      if (exportRate) parts.push(`${displayRows.length} 条${filters.mode === 'daily' ? '当日' : '累计'}成交率数据`);
-      if (exportDrilldown) parts.push(`业代下钻数据`);
-      toast.success(`已导出：${parts.join('、')}`);
+      const fileName = `${filters.mode === 'daily' ? '业代当日成交率' : '业代累计成交率'}_${timeLabel}`;
+      await reportApi.generateReport({
+        type: 'sales-rep-heatmap',
+        title: fileName,
+        fileName,
+        sheets,
+      });
+      toast.success('报表已生成，请点击右上角下载按钮查看/下载');
     } catch (err) {
       logger.error('Failed to export heatmap:', err);
       toast.error('导出失败，请重试');
@@ -706,7 +669,7 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
     <div className="bg-card border border-border rounded-sm overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-bold text-foreground">{filters.mode === 'daily' ? '业代当日成交率' : '业代累计成交率'}</h3>
+          <h3 className="text-sm font-bold text-foreground">{filters.mode === 'daily' ? '业代单日成交率' : '业代累计成交率'}</h3>
           <div className="flex items-center gap-0.5">
             {GRANULARITY_OPTIONS.map((opt) => (
               <Button
@@ -731,7 +694,7 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
         </div>
         <Button size="sm" onClick={() => setExportOpen(true)} disabled={loading || rows.length === 0} className="gap-1">
           <span className="inline-flex items-center justify-center text-base leading-none">⬇️</span>
-          导出成交率
+          {filters.mode === 'daily' ? '单日成交率' : '累计成交率'}
         </Button>
       </div>
 
@@ -793,7 +756,7 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
               <span className="text-[10px] text-muted-foreground">= 后30%</span>
             </div>
           </div>
-          <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 260px)' }}>
+          <div className="overflow-auto bg-card border border-border rounded-sm" style={{ maxHeight: 'calc(100vh - 260px)' }}>
             <table className="w-full border-collapse text-xs" style={{ minWidth: totalFixedWidth + columns.length * colWidth, tableLayout: 'fixed' }}>
               <thead>
                 <tr style={{ backgroundColor: 'hsl(217, 40%, 95%)' }}>

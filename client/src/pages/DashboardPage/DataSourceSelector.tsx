@@ -14,6 +14,8 @@ const TIER2_OPTIONS: SheetType[] = ['二阶订单', '二阶回单'];
 const DataSourceSelector: React.FC<DataSourceSelectorProps> = ({ value, onChange }) => {
   const selectedTier1 = TIER1_OPTIONS.find((o: SheetType) => value.includes(o));
   const selectedTier2 = TIER2_OPTIONS.find((o: SheetType) => value.includes(o));
+  // 当前已选数据源（用于右上角实时展示）
+  const selectedLabels = [selectedTier1, selectedTier2].filter((v): v is SheetType => Boolean(v));
 
   const handleSelect = useCallback((option: SheetType) => {
     const pair = TIER1_OPTIONS.includes(option) ? TIER1_OPTIONS : TIER2_OPTIONS;
@@ -88,25 +90,28 @@ const DataSourceSelector: React.FC<DataSourceSelectorProps> = ({ value, onChange
         <span className="inline-flex items-center justify-center text-base leading-none text-primary" >🗄️</span>
         <span className="text-xs font-medium text-foreground">数据源</span>
         <div className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground">
-          <span className="inline-flex items-center justify-center text-base leading-none" >⚠️</span>
-          <span>一阶/二阶各选其一</span>
+          {selectedLabels.length > 0 ? (
+            <>
+              <span className="inline-flex items-center justify-center text-base leading-none text-success">✓</span>
+              <span className="truncate">已选：{selectedLabels.join('、')}</span>
+            </>
+          ) : (
+            <>
+              <span className="inline-flex items-center justify-center text-base leading-none" >⚠️</span>
+              <span>一阶/二阶各选其一</span>
+            </>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] text-muted-foreground shrink-0">一阶</span>
           {TIER1_OPTIONS.map(renderOption)}
-          {selectedTier1 && (
-            <span className="text-[10px] text-muted-foreground/60 ml-0.5">已选：{selectedTier1}</span>
-          )}
         </div>
         <div className="w-px h-4 bg-border" />
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] text-muted-foreground shrink-0">二阶</span>
           {TIER2_OPTIONS.map(renderOption)}
-          {selectedTier2 && (
-            <span className="text-[10px] text-muted-foreground/60 ml-0.5">已选：{selectedTier2}</span>
-          )}
         </div>
       </div>
     </div>

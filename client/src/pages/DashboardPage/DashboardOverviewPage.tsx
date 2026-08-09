@@ -577,6 +577,9 @@ const DashboardOverviewPage: React.FC = () => {
           label="累计成交率"
           icon="📈"
           variant="primary"
+          hoverEffect
+          glowColor="hsl(217,85%,52%)"
+          lineColor="bg-[hsl(217,85%,52%)]"
           loading={loading || kpiValues.cumRate == null}
           value={
             kpiValues.cumRate != null ? (
@@ -591,6 +594,9 @@ const DashboardOverviewPage: React.FC = () => {
           label="当日成交率"
           icon="✅"
           variant="success"
+          hoverEffect
+          glowColor="hsl(152,60%,42%)"
+          lineColor="bg-[hsl(152,60%,42%)]"
           loading={loading || kpiValues.dailyRate == null}
           value={
             kpiValues.dailyRate != null ? (
@@ -604,6 +610,9 @@ const DashboardOverviewPage: React.FC = () => {
         <KpiCard
           label="总服务点数"
           icon="🏬"
+          hoverEffect
+          glowColor="hsl(38,85%,48%)"
+          lineColor="bg-[hsl(38,85%,48%)]"
           loading={loading}
           value={
             <CountUp end={kpiValues.servicePoints} duration={0.6} decimals={0} separator="," />
@@ -612,6 +621,9 @@ const DashboardOverviewPage: React.FC = () => {
         <KpiCard
           label="期间订单箱数"
           icon="📦"
+          hoverEffect
+          glowColor="hsl(262,80%,58%)"
+          lineColor="bg-[hsl(262,80%,58%)]"
           loading={loading}
           value={
             <CountUp end={kpiValues.orders} duration={0.6} decimals={0} separator="," />

@@ -258,10 +258,12 @@ const DashboardBrandSpecPage: React.FC = () => {
                 size="sm"
                 onClick={() => brandSpecTableRef.current?.handleAddColumn()}
                 title="增加品牌/规格列"
-                className="gap-1"
+                className="btn-icon-slide"
               >
-                <Plus className="h-4 w-4" />
-                添加列
+                <span className="btn-icon-slide-text">添加列</span>
+                <span className="btn-icon-slide-icon" aria-hidden="true">
+                  <Plus className="h-4 w-4" />
+                </span>
               </Button>
               <Button
                 variant="outline"
@@ -271,7 +273,7 @@ const DashboardBrandSpecPage: React.FC = () => {
                 className="gap-1"
               >
                 <Download className="h-4 w-4" />
-                导出
+                品牌&规格占比
               </Button>
             </div>
           ) : null

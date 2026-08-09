@@ -27,6 +27,9 @@ pids
 *.seed
 *.pid.lock
 
+# 后端生成的报表文件（Excel）
+server/storage/
+
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov

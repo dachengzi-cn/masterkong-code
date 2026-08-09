@@ -21,7 +21,7 @@ import {
   EmptyDescription,
   EmptyContent,
 } from '@/components/ui/empty';
-import { datasetApi } from '@client/src/api/index';
+import { datasetApi, reportApi } from '@client/src/api/index';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import type {
   AtpPerformanceResponse,
@@ -30,14 +30,11 @@ import type {
   AtpPerformanceStoreDetailResponse,
   AtpThresholdParams,
   HeatmapFilterParams,
+  ReportRow,
+  ReportSheetData,
+  ReportCellStyle,
 } from '@shared/api.interface';
 
-interface CellStyle {
-  font?: { sz: number; color: { rgb: string }; bold?: boolean };
-  alignment?: { vertical: string; horizontal?: string };
-  border?: Record<string, { style: string; color: { rgb: string } }>;
-  fill?: { fgColor: { rgb: string } };
-}
 type RowType = 'data' | 'regionTotal' | 'grandTotal';
 type DrillMetric = 'paidPointFeeRatio' | 'paidPointSalesRatio';
 
@@ -202,7 +199,7 @@ function hslToHex(h: number, s: number, l: number): string {
   return `${toH(r)}${toH(g)}${toH(b)}`;
 }
 
-function baseCellStyle(): CellStyle {
+function baseCellStyle(): ReportCellStyle {
   return {
     font: { sz: 10, color: { rgb: '1A2433' } },
     alignment: { vertical: 'center' },
@@ -874,8 +871,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
     if (!visibleRows.length || exporting) return;
     setExporting(true);
     try {
-      const XLSX = await import('xlsx-js-style').then((m) => m.default || m);
-      const headerStyle: CellStyle = {
+      const headerStyle: ReportCellStyle = {
         fill: { fgColor: { rgb: hslToHex(217, 40, 95) } },
         font: { bold: true, sz: 10, color: { rgb: '1A2433' } },
         alignment: { horizontal: 'center', vertical: 'center' },
@@ -888,8 +884,6 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       };
 
       // ---------- 主表：ATP绩效 ----------
-      const mainWs = XLSX.utils.aoa_to_sheet([]);
-
       // 构建导出列：基础列 + 展开的下钻月度列
       type ExportCol =
         | { type: 'base'; col: ColumnDef }
@@ -907,35 +901,24 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
         }
       }
 
-      // 写入表头
-      const headers = exportCols.map((ec) =>
-        ec.type === 'base' ? ec.col.label : formatMonthLabel(ec.month),
-      );
-      XLSX.utils.sheet_add_aoa(mainWs, [headers], { origin: 'A1' });
-      for (let c = 0; c < headers.length; c++) {
-        const cell = mainWs[XLSX.utils.encode_cell({ r: 0, c })] as Record<
-          string,
-          unknown
-        >;
-        const ec = exportCols[c];
-        let bgHex: string;
-        if (ec.type === 'drill') {
-          bgHex = hslToHex(217, 40, 92);
-        } else {
-          const colDef = ec.col;
-          bgHex = colDef.headerBg
-            ? hslToHex(217, 85, colDef.headerBg.includes('90%') ? 90 : 80)
-            : hslToHex(217, 40, 95);
-        }
-        if (cell) {
-          cell.s = {
-            ...headerStyle,
-            fill: { fgColor: { rgb: bgHex } },
+      const mainRows: ReportRow[] = [
+        exportCols.map((ec) => {
+          let bgHex: string;
+          if (ec.type === 'drill') {
+            bgHex = hslToHex(217, 40, 92);
+          } else {
+            const colDef = ec.col;
+            bgHex = colDef.headerBg
+              ? hslToHex(217, 85, colDef.headerBg.includes('90%') ? 90 : 80)
+              : hslToHex(217, 40, 95);
+          }
+          return {
+            v: ec.type === 'base' ? ec.col.label : formatMonthLabel(ec.month),
+            s: { ...headerStyle, fill: { fgColor: { rgb: bgHex } } },
           };
-        }
-      }
+        }),
+      ];
 
-      // 写入数据行
       visibleRows.forEach((row: DisplayRow, ri: number) => {
         const rowKey = `${row.region}||${row.tier}||${row.salesRep}`;
         const baseBg =
@@ -947,8 +930,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                 ? 'FFFFFF'
                 : hslToHex(220, 18, 98);
 
-        exportCols.forEach((ec, ci) => {
-          const ref = XLSX.utils.encode_cell({ r: ri + 1, c: ci });
+        const rowCells: ReportRow = exportCols.map((ec) => {
           if (ec.type === 'base') {
             const col = ec.col;
             const raw = row[col.key];
@@ -978,24 +960,22 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
               }
             }
 
-            const style: CellStyle = {
-              ...baseCellStyle(),
-              fill: { fgColor: { rgb: warnHex ?? baseBg } },
-              font: {
-                ...baseCellStyle().font,
-                bold: row.rowType !== 'data',
-              },
-              alignment: {
-                horizontal: col.align === 'right' ? 'right' : 'left',
-                vertical: 'center',
+            return {
+              v: isNumber ? raw : String(raw ?? ''),
+              ...(col.format === formatPercent ? { z: '0.00%' } : {}),
+              s: {
+                ...baseCellStyle(),
+                fill: { fgColor: { rgb: warnHex ?? baseBg } },
+                font: {
+                  ...baseCellStyle().font,
+                  bold: row.rowType !== 'data',
+                },
+                alignment: {
+                  horizontal: col.align === 'right' ? 'right' : 'left',
+                  vertical: 'center',
+                },
               },
             };
-            mainWs[ref] = {
-              v: isNumber ? raw : String(raw ?? ''),
-              t: isNumber ? 'n' : 's',
-              ...(col.format === formatPercent ? { z: '0.00%' } : {}),
-              s: style,
-            } as never;
           } else {
             // 下钻月度列
             const drill = monthlyData[ec.metric];
@@ -1017,34 +997,27 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                 ? hslToHex(4, 72, 90)
                 : hslToHex(152, 60, 90)
               : baseBg;
-            const style: CellStyle = {
-              ...baseCellStyle(),
-              fill: { fgColor: { rgb: drillBg } },
-              font: {
-                ...baseCellStyle().font,
-                bold: row.rowType !== 'data',
-              },
-              alignment: { horizontal: 'right', vertical: 'center' },
-            };
-            mainWs[ref] = {
+            return {
               v: ratio !== null ? ratio : '',
-              t: ratio !== null ? 'n' : 's',
               ...(ratio !== null ? { z: '0.00%' } : {}),
-              s: style,
-            } as never;
+              s: {
+                ...baseCellStyle(),
+                fill: { fgColor: { rgb: drillBg } },
+                font: {
+                  ...baseCellStyle().font,
+                  bold: row.rowType !== 'data',
+                },
+                alignment: { horizontal: 'right', vertical: 'center' },
+              },
+            };
           }
         });
+        mainRows.push(rowCells);
       });
 
-      mainWs['!cols'] = exportCols.map((ec) =>
-        ec.type === 'base'
-          ? { wch: ec.col.label.length + 4 }
-          : { wch: 12 },
+      const mainColWidths = exportCols.map((ec) =>
+        ec.type === 'base' ? ec.col.label.length + 4 : 12,
       );
-      mainWs['!ref'] = XLSX.utils.encode_range({
-        s: { r: 0, c: 0 },
-        e: { r: visibleRows.length, c: headers.length - 1 },
-      });
 
       // ---------- 门店明细表 ----------
       const storeDetail = await datasetApi.getAtpPerformanceStoreDetail(
@@ -1115,33 +1088,23 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       // 构建门店显示行：明细 + 人员合计 + 所别合计 + 部别合计
       const storeDisplayRows = buildStoreDisplayRows(storeDetail.rows, storeMonthCount);
 
-      const storeWs = XLSX.utils.aoa_to_sheet([]);
-      const storeHeaders = storeExportCols.map((ec) =>
-        ec.type === 'base' ? ec.col.label : formatMonthLabel(ec.month),
-      );
-      XLSX.utils.sheet_add_aoa(storeWs, [storeHeaders], { origin: 'A1' });
-      for (let c = 0; c < storeHeaders.length; c++) {
-        const cell = storeWs[XLSX.utils.encode_cell({ r: 0, c })] as Record<
-          string,
-          unknown
-        >;
-        const ec = storeExportCols[c];
-        let bgHex: string;
-        if (ec.type === 'drill') {
-          bgHex = hslToHex(217, 40, 92);
-        } else {
-          const colDef = ec.col;
-          bgHex = colDef.headerBg
-            ? hslToHex(217, 85, colDef.headerBg.includes('90%') ? 90 : 80)
-            : hslToHex(217, 40, 95);
-        }
-        if (cell) {
-          cell.s = {
-            ...headerStyle,
-            fill: { fgColor: { rgb: bgHex } },
+      const storeRows: ReportRow[] = [
+        storeExportCols.map((ec) => {
+          let bgHex: string;
+          if (ec.type === 'drill') {
+            bgHex = hslToHex(217, 40, 92);
+          } else {
+            const colDef = ec.col;
+            bgHex = colDef.headerBg
+              ? hslToHex(217, 85, colDef.headerBg.includes('90%') ? 90 : 80)
+              : hslToHex(217, 40, 95);
+          }
+          return {
+            v: ec.type === 'base' ? ec.col.label : formatMonthLabel(ec.month),
+            s: { ...headerStyle, fill: { fgColor: { rgb: bgHex } } },
           };
-        }
-      }
+        }),
+      ];
 
       storeDisplayRows.forEach((row: StoreDisplayRow, ri: number) => {
         const salesRepForKey =
@@ -1159,30 +1122,27 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                   ? 'FFFFFF'
                   : hslToHex(220, 18, 98);
 
-        storeExportCols.forEach((ec, ci) => {
-          const ref = XLSX.utils.encode_cell({ r: ri + 1, c: ci });
+        const rowCells: ReportRow = storeExportCols.map((ec) => {
           if (ec.type === 'base') {
             const col = ec.col;
             const raw = row[col.key];
             const isNumber = typeof raw === 'number';
-            const style: CellStyle = {
-              ...baseCellStyle(),
-              fill: { fgColor: { rgb: baseBg } },
-              font: {
-                ...baseCellStyle().font,
-                bold: row.rowType !== 'data',
-              },
-              alignment: {
-                horizontal: col.align === 'right' ? 'right' : 'left',
-                vertical: 'center',
+            return {
+              v: isNumber ? raw : String(raw ?? ''),
+              ...(col.format === formatPercent ? { z: '0.00%' } : {}),
+              s: {
+                ...baseCellStyle(),
+                fill: { fgColor: { rgb: baseBg } },
+                font: {
+                  ...baseCellStyle().font,
+                  bold: row.rowType !== 'data',
+                },
+                alignment: {
+                  horizontal: col.align === 'right' ? 'right' : 'left',
+                  vertical: 'center',
+                },
               },
             };
-            storeWs[ref] = {
-              v: isNumber ? raw : String(raw ?? ''),
-              t: isNumber ? 'n' : 's',
-              ...(col.format === formatPercent ? { z: '0.00%' } : {}),
-              s: style,
-            } as never;
           } else {
             // 门店级下钻月度列
             const drill = storeMonthlyData[ec.metric];
@@ -1207,43 +1167,40 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                 ? hslToHex(4, 72, 90)
                 : hslToHex(152, 60, 90)
               : baseBg;
-            const style: CellStyle = {
-              ...baseCellStyle(),
-              fill: { fgColor: { rgb: drillBg } },
-              font: {
-                ...baseCellStyle().font,
-                bold: row.rowType !== 'data',
-              },
-              alignment: { horizontal: 'right', vertical: 'center' },
-            };
-            storeWs[ref] = {
+            return {
               v: ratio !== null ? ratio : '',
-              t: ratio !== null ? 'n' : 's',
               ...(ratio !== null ? { z: '0.00%' } : {}),
-              s: style,
-            } as never;
+              s: {
+                ...baseCellStyle(),
+                fill: { fgColor: { rgb: drillBg } },
+                font: {
+                  ...baseCellStyle().font,
+                  bold: row.rowType !== 'data',
+                },
+                alignment: { horizontal: 'right', vertical: 'center' },
+              },
+            };
           }
         });
+        storeRows.push(rowCells);
       });
 
-      storeWs['!cols'] = storeExportCols.map((ec) =>
-        ec.type === 'base' ? { wch: ec.col.label.length + 4 } : { wch: 12 },
+      const storeColWidths = storeExportCols.map((ec) =>
+        ec.type === 'base' ? ec.col.label.length + 4 : 12,
       );
-      storeWs['!ref'] = XLSX.utils.encode_range({
-        s: { r: 0, c: 0 },
-        e: {
-          r: storeDisplayRows.length,
-          c: storeHeaders.length - 1,
-        },
-      });
 
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, mainWs, 'ATP绩效');
-      XLSX.utils.book_append_sheet(wb, storeWs, '付费门店明细');
-      XLSX.writeFile(wb, `ATP绩效_${dateFrom}_${dateTo}.xlsx`);
-      toast.success(
-        `已导出 ${visibleRows.length} 条ATP绩效数据及 ${storeDisplayRows.length} 条门店明细（含汇总）`,
-      );
+      const fileName = `ATP绩效_${dateFrom}_${dateTo}`;
+      const sheets: ReportSheetData[] = [
+        { sheetName: 'ATP绩效', rows: mainRows, colWidths: mainColWidths },
+        { sheetName: '付费门店明细', rows: storeRows, colWidths: storeColWidths },
+      ];
+      await reportApi.generateReport({
+        type: 'atp',
+        title: fileName,
+        fileName,
+        sheets,
+      });
+      toast.success('报表已生成，请点击右上角下载按钮查看/下载');
     } catch (err) {
       logger.error('Failed to export ATP performance:', err);
       toast.error('导出失败，请重试');
@@ -1313,7 +1270,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
               className="gap-1"
             >
               <span className="inline-flex items-center justify-center text-base leading-none" >⬇️</span>
-              {exporting ? '导出中...' : '导出ATP绩效'}
+              {exporting ? '导出中...' : 'ATP绩效明细'}
             </Button>
           </div>
 

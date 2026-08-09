@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit/logger';
-import { expenseApi } from '@client/src/api/index';
+import { expenseApi, reportApi } from '@client/src/api/index';
 import { Button } from '@/components/ui/button';
 import {
   Empty,
@@ -13,7 +13,7 @@ import {
   EmptyDescription,
   EmptyContent,
 } from '@/components/ui/empty';
-import type { ExpiryAnalysisFilters, ExpiryAnalysisResult, ExpiryDrilldownResult } from '@shared/api.interface';
+import type { ExpiryAnalysisFilters, ExpiryAnalysisResult, ExpiryDrilldownResult, ReportSheetData } from '@shared/api.interface';
 import { AiAnalysisPanel } from '@/components/business-ui/ai-analysis-panel';
 import ExpiryKpiCards from './ExpiryKpiCards';
 import ExpiryFilterBar from './ExpiryFilterBar';
@@ -223,50 +223,52 @@ const ExpiryExpensePage: React.FC = () => {
   const handleExport = useCallback(async () => {
     if (!data || loading) return;
     try {
-      const XLSX = await import('xlsx-js-style').then((m) => m.default || m);
-      const wb = XLSX.utils.book_new();
+      const sheets: ReportSheetData[] = [
+        {
+          sheetName: 'KPI',
+          rows: [
+            ['临期费用总额', data.kpis.totalAmount],
+            ['环比变化（%）', data.kpis.monthOverMonthChange],
+            ['涉及门店数', data.kpis.involvedStoreCount],
+          ],
+        },
+        {
+          sheetName: '月度趋势',
+          rows: [
+            ['月份', '临期费用', '记录数'],
+            ...data.trend.map((item) => [item.month, item.amount, item.recordCount]),
+          ],
+        },
+        {
+          sheetName: '排行',
+          rows: [
+            ['维度', '值', '金额', '占比', '记录数'],
+            ...[
+              ...data.regionRank.map((r) => ['所别', r.value, r.amount, r.share, r.recordCount]),
+              ...data.tierRank.map((r) => ['阶层', r.value, r.amount, r.share, r.recordCount]),
+              ...data.dealerTypeRank.map((r) => ['形态', r.value, r.amount, r.share, r.recordCount]),
+              ...data.businessRank.map((r) => ['业务', r.value, r.amount, r.share, r.recordCount]),
+              ...data.specificationRank.map((r) => ['规格', r.value, r.amount, r.share, r.recordCount]),
+            ],
+          ],
+        },
+        {
+          sheetName: '预警与建议',
+          rows: [
+            ['类型', '等级', '标题', '描述', '建议', '金额'],
+            ...data.warnings.map((w) => [w.type, w.level, w.title, w.description, w.suggestion, w.amount]),
+          ],
+        },
+      ];
 
-      const kpiSheet = XLSX.utils.aoa_to_sheet([
-        ['临期费用总额', data.kpis.totalAmount],
-        ['环比变化（%）', data.kpis.monthOverMonthChange],
-        ['涉及门店数', data.kpis.involvedStoreCount],
-      ]);
-      XLSX.utils.book_append_sheet(wb, kpiSheet, 'KPI');
-
-      const trendSheet = XLSX.utils.json_to_sheet(
-        data.trend.map((item) => ({
-          月份: item.month,
-          临期费用: item.amount,
-          记录数: item.recordCount,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, trendSheet, '月度趋势');
-
-      const rankSheet = XLSX.utils.json_to_sheet(
-        [
-          ...data.regionRank.map((r) => ({ 维度: '所别', 值: r.value, 金额: r.amount, 占比: r.share, 记录数: r.recordCount })),
-          ...data.tierRank.map((r) => ({ 维度: '阶层', 值: r.value, 金额: r.amount, 占比: r.share, 记录数: r.recordCount })),
-          ...data.dealerTypeRank.map((r) => ({ 维度: '形态', 值: r.value, 金额: r.amount, 占比: r.share, 记录数: r.recordCount })),
-          ...data.businessRank.map((r) => ({ 维度: '业务', 值: r.value, 金额: r.amount, 占比: r.share, 记录数: r.recordCount })),
-          ...data.specificationRank.map((r) => ({ 维度: '规格', 值: r.value, 金额: r.amount, 占比: r.share, 记录数: r.recordCount })),
-        ],
-      );
-      XLSX.utils.book_append_sheet(wb, rankSheet, '排行');
-
-      const warningSheet = XLSX.utils.json_to_sheet(
-        data.warnings.map((w) => ({
-          类型: w.type,
-          等级: w.level,
-          标题: w.title,
-          描述: w.description,
-          建议: w.suggestion,
-          金额: w.amount,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, warningSheet, '预警与建议');
-
-      XLSX.writeFile(wb, `临期费用分析报告_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      toast.success('分析报告导出成功');
+      const fileName = `临期费用分析报告_${new Date().toISOString().slice(0, 10)}`;
+      await reportApi.generateReport({
+        type: 'expiry-analysis',
+        title: fileName,
+        fileName,
+        sheets,
+      });
+      toast.success('报表已生成，请点击右上角下载按钮查看/下载');
     } catch (err) {
       logger.error('Failed to export expiry analysis:', err);
       toast.error('导出失败，请重试');

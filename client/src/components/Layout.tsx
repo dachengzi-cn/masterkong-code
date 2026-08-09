@@ -35,6 +35,7 @@ import {
   BreadcrumbList,
 } from '@/components/ui/breadcrumb';
 import { SettingsButton } from '@/components/business-ui/settings-button';
+import { ReportDownloadButton } from '@/components/business-ui/report-download-button';
 import {
   SheetWorkspace,
   type SheetItem,
@@ -51,7 +52,7 @@ const NAV_ITEMS = [
 
 const DASHBOARD_SUB_ITEMS = [
   { path: '/dashboard/cumulative', label: '累计成交分析', icon: '📈' },
-  { path: '/dashboard/daily', label: '当日成交分析', icon: '📅' },
+  { path: '/dashboard/daily', label: '单日成交分析', icon: '📅' },
   { path: '/dashboard/brand-spec', label: '品牌 & 规格分析', icon: '🏷️' },
 ];
 
@@ -440,7 +441,8 @@ const LayoutContent = () => {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div className="ml-auto flex items-center">
+          <div className="ml-auto flex items-center gap-1">
+            <ReportDownloadButton />
             <SettingsButton />
           </div>
         </header>

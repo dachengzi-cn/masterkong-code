@@ -5,15 +5,6 @@ import MultiSelect, { MultiSelectCombo } from '@/components/ui/multi-select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
@@ -39,7 +30,6 @@ interface FilterBarProps {
   datasetId?: string;
   filters: HeatmapFilterParams;
   onFiltersChange: (filters: HeatmapFilterParams) => void;
-  onDownloadUnconverted?: (selectedRoutes: string[]) => void;
   dateRange: DateRangeValue;
   onDateRangeChange: (range: DateRangeValue) => void;
   onReset: () => void;
@@ -88,13 +78,11 @@ const FilterBar: React.FC<FilterBarProps> = ({
   datasetId,
   filters: rawFilters,
   onFiltersChange,
-  onDownloadUnconverted,
   dateRange,
   onDateRangeChange,
   onReset,
   showBrandFilter = true,
   showSpecFilter = true,
-  showDownloadUnconverted = true,
   onConfirm,
   confirming = false,
   afterAdvancedFilters,
@@ -103,18 +91,10 @@ const FilterBar: React.FC<FilterBarProps> = ({
   const filters = rawFilters || {};
   const [options, setOptions] = useState<FilterOptions>({ regions: [], tiers: [], dealerTypes: [], brands: [], salesReps: [], specifications: [] });
   const [specOptions, setSpecOptions] = useState<DatasetSpecOptions>({ brands: [], specifications: [], pairs: [] });
-
-  // Route selection dialog state
-  const [routeDialogOpen, setRouteDialogOpen] = useState(false);
-  const [selectedRoutes, setSelectedRoutes] = useState<string[]>([]);
-  const [routeLoading, setRouteLoading] = useState(false);
   const [customCombos, setCustomCombos] = useState<StoredCustomCombo[]>([]);
 
   // 高级筛选展开/收起状态
   const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
-
-  // Fixed basic route options (周一~周六)
-  const BASIC_ROUTE_OPTIONS = ['周一', '周二', '周三', '周四', '周五', '周六'];
 
   useEffect(() => {
     setCustomCombos(loadCustomCombos());
@@ -313,38 +293,6 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
   const effectiveSheetTypes = filters.sheetType ?? DEFAULT_SHEET_TYPES;
 
-  const handleOpenRouteDialog = useCallback(() => {
-    setRouteDialogOpen(true);
-    setSelectedRoutes([]);
-  }, []);
-
-  const handleRouteConfirm = useCallback(() => {
-    setRouteDialogOpen(false);
-    onDownloadUnconverted(selectedRoutes);
-  }, [selectedRoutes, onDownloadUnconverted]);
-
-  const handleRouteCancel = useCallback(() => {
-    setRouteDialogOpen(false);
-    setSelectedRoutes([]);
-  }, []);
-
-  const toggleRoute = useCallback((routeName: string) => {
-    setSelectedRoutes((prev: string[]) =>
-      prev.includes(routeName) ? prev.filter((r: string) => r !== routeName) : [...prev, routeName],
-    );
-  }, []);
-
-  const allRoutesSelected = BASIC_ROUTE_OPTIONS.length > 0 && selectedRoutes.length === BASIC_ROUTE_OPTIONS.length;
-  const indeterminate = selectedRoutes.length > 0 && selectedRoutes.length < BASIC_ROUTE_OPTIONS.length;
-
-  const handleToggleAll = useCallback(() => {
-    if (allRoutesSelected) {
-      setSelectedRoutes([]);
-    } else {
-      setSelectedRoutes([...BASIC_ROUTE_OPTIONS]);
-    }
-  }, [allRoutesSelected]);
-
   return (
     <div className="space-y-2">
       <DataSourceSelector
@@ -494,34 +442,26 @@ const FilterBar: React.FC<FilterBarProps> = ({
               </Button>
             </CollapsibleTrigger>
 
-            {onConfirm && (
-              <Button
-                size="sm"
-                onClick={onConfirm}
-                disabled={effectiveSheetTypes.length === 0 || confirming}
-                className="gap-1 ml-auto"
-              >
-                {confirming ? (
-                  <span className="inline-flex items-center justify-center text-base leading-none animate-spin">⏳</span>
-                ) : (
-                  <span className="inline-flex items-center justify-center text-base leading-none">✓</span>
+            {(onConfirm || rightActions) && (
+              <div className="flex items-center gap-2 ml-auto">
+                {onConfirm && (
+                  <Button
+                    size="sm"
+                    onClick={onConfirm}
+                    disabled={effectiveSheetTypes.length === 0 || confirming}
+                    className="gap-1"
+                  >
+                    {confirming ? (
+                      <span className="inline-flex items-center justify-center text-base leading-none animate-spin">⏳</span>
+                    ) : (
+                      <span className="inline-flex items-center justify-center text-base leading-none">✓</span>
+                    )}
+                    确认查询
+                  </Button>
                 )}
-                确认查询
-              </Button>
+                {rightActions}
+              </div>
             )}
-
-            {showDownloadUnconverted && onDownloadUnconverted && (
-              <Button
-                size="sm"
-                onClick={handleOpenRouteDialog}
-                className="gap-1"
-              >
-                <span className="inline-flex items-center justify-center text-base leading-none" >⬇️</span>
-                未成交明细
-              </Button>
-            )}
-
-            {rightActions && <div className="flex items-center gap-2 ml-auto">{rightActions}</div>}
           </div>
 
           <CollapsibleContent>
@@ -581,65 +521,6 @@ const FilterBar: React.FC<FilterBarProps> = ({
         {afterAdvancedFilters}
       </FilterBarContainer>
 
-      {/* Route Selection Dialog */}
-      <Dialog open={routeDialogOpen} onOpenChange={(open: boolean) => { if (!open) handleRouteCancel(); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-base">选择线路</DialogTitle>
-            <DialogDescription className="text-xs">
-              请选择线路以导出所选线路未成交门店明细
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-1">
-            {/* Select All */}
-            <div
-              className="flex items-center gap-3 px-3 py-2 rounded-sm hover:bg-accent cursor-pointer transition-colors"
-              onClick={handleToggleAll}
-            >
-              <Checkbox
-                checked={allRoutesSelected ? true : indeterminate ? 'indeterminate' : false}
-              />
-              <span className="text-sm font-medium text-foreground">全选</span>
-              <span className="text-xs text-muted-foreground ml-auto">
-                {selectedRoutes.length}/{BASIC_ROUTE_OPTIONS.length}
-              </span>
-            </div>
-            <div className="border-t border-border my-1" />
-            {/* Basic Route Options: 周一~周六 */}
-            <div className="grid grid-cols-3 gap-1 px-1 py-1">
-              {BASIC_ROUTE_OPTIONS.map((routeName: string) => (
-                <div
-                  key={routeName}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-sm cursor-pointer transition-colors ${
-                    selectedRoutes.includes(routeName)
-                      ? 'bg-primary/10 border border-primary/30'
-                      : 'hover:bg-accent border border-transparent'
-                  }`}
-                  onClick={() => toggleRoute(routeName)}
-                >
-                  <Checkbox checked={selectedRoutes.includes(routeName)} />
-                  <span className="text-sm text-foreground">{routeName}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={handleRouteCancel}>
-              取消
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleRouteConfirm}
-              disabled={selectedRoutes.length === 0}
-            >
-              <span className="inline-flex items-center justify-center text-base leading-none mr-1" >✓</span>
-              确定导出
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

@@ -53,6 +53,7 @@
     "dayjs": "^1.11.15",
     "dotenv": "^17.2.2",
     "drizzle-orm": "0.44.6",
+    "fflate": "^0.8.3",
     "hbs": "^4.2.0",
     "react-window": "^2.2.7",
     "reflect-metadata": "^0.1.14",

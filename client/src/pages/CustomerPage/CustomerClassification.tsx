@@ -443,18 +443,27 @@ const CustomerClassification: React.FC = () => {
           <KpiCard
             icon="🏬"
             label="总门店数"
+            hoverEffect
+            glowColor="hsl(217,85%,52%)"
+            lineColor="bg-[hsl(217,85%,52%)]"
             value={data.totalStoreCount.toLocaleString()}
             subText={`一阶 ${tier1Count.toLocaleString()} 家 / 二阶 ${tier2Count.toLocaleString()} 家`}
           />
           <KpiCard
             icon="💳"
             label="付费门店数"
+            hoverEffect
+            glowColor="hsl(152,60%,42%)"
+            lineColor="bg-[hsl(152,60%,42%)]"
             value={data.totalPaidStoreCount.toLocaleString()}
             subText={`占一阶 ${paidRatio}%`}
           />
           <KpiCard
             icon="💰"
             label="付费金额"
+            hoverEffect
+            glowColor="hsl(38,85%,48%)"
+            lineColor="bg-[hsl(38,85%,48%)]"
             value={`¥${round2(data.totalPaidAmount).toLocaleString()}`}
             subText={`${regions.length} 个所别`}
           />

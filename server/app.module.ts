@@ -14,6 +14,7 @@ import { RuntimeModule } from './modules/runtime/runtime.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AiAnalysisModule } from './modules/ai-analysis/ai-analysis.module';
 import { DocGenModule } from './modules/doc-gen/doc-gen.module';
+import { ReportsModule } from './modules/reports/reports.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { DocGenModule } from './modules/doc-gen/doc-gen.module';
     AiModule,
     AiAnalysisModule,
     DocGenModule,
+    ReportsModule,
     // ====== @route-section: business-modules END ======
 
     // ️ @route-order: last

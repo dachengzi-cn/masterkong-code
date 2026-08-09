@@ -344,6 +344,31 @@ export interface SalesRepDrilldownResponse {
   specificationBreakdown: SpecDealItem[];
 }
 
+/** 业代月度未成交门店统计（单月） */
+export interface SalesRepUnconvertedMonthly {
+  /** 月份，格式 YYYY-MM */
+  month: string;
+  /** 展示标签，如 2026年2月 */
+  monthLabel: string;
+  /** 该业代服务门店数 */
+  serviceStores: number;
+  /** 该月未成交门店数 */
+  unconvertedStores: number;
+}
+
+/** 业代未成交门店下钻响应（近六个月分月 + 连续N个月未成交） */
+export interface SalesRepUnconvertedDrilldownResponse {
+  salesRep: string;
+  region: string;
+  tier: string;
+  /** 近六个月分月未成交统计（最近月在前） */
+  months: SalesRepUnconvertedMonthly[];
+  /** 连续2个月未成交门店数（6个月窗口内存在连续2个月无成交记录） */
+  consecutive2Months: number;
+  /** 连续3个月未成交门店数（6个月窗口内存在连续3个月无成交记录） */
+  consecutive3Months: number;
+}
+
 export interface SystemStatusResponse {
   latestCustomerUpdatedAt: string | null;
   latestDatasetCreatedAt: string | null;
@@ -946,6 +971,93 @@ export interface TestAiModelConfigResponse {
   content?: string;
   error?: string;
   metrics?: TestAiModelConfigMetrics;
+}
+
+// ===== 报表生成（后端生成 Excel，前端全局下载按钮查看/下载）=====
+
+/** 单元格样式（xlsx-js-style 兼容子集，字段与前端导出保持一致） */
+export interface ReportCellStyle {
+  font?: {
+    bold?: boolean;
+    sz?: number;
+    color?: { rgb?: string };
+  };
+  fill?: {
+    fgColor?: { rgb?: string };
+    patternType?: string;
+  };
+  alignment?: {
+    horizontal?: 'left' | 'center' | 'right' | 'fill';
+    vertical?: 'top' | 'center' | 'bottom';
+    wrapText?: boolean;
+  };
+  border?: {
+    top?: { style?: string; color?: { rgb?: string } };
+    bottom?: { style?: string; color?: { rgb?: string } };
+    left?: { style?: string; color?: { rgb?: string } };
+    right?: { style?: string; color?: { rgb?: string } };
+  };
+  numFmt?: string;
+}
+
+/** 报表单元格：v=值，s=样式（可选），z=数字格式（如 '0.00%'，xlsx 兼容） */
+export interface ReportCell {
+  v: string | number | boolean | null | undefined;
+  s?: ReportCellStyle;
+  z?: string;
+}
+
+/** 一行数据：原始值或带样式的单元格对象（xlsx AOA 兼容） */
+export type ReportRow = Array<string | number | boolean | null | ReportCell>;
+
+/** 单个 Sheet 描述（前端上传，后端渲染 Excel） */
+export interface ReportSheetData {
+  sheetName: string;
+  /** 二维数组（AOA），单元格可为原始值或 { v, s } 对象 */
+  rows: ReportRow[];
+  /** 列宽（字符宽度，null 表示默认） */
+  colWidths?: Array<number | null>;
+  /** 合并单元格（行列从 0 开始） */
+  merges?: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }>;
+  /** 是否显示网格线，默认 true */
+  showGridLines?: boolean;
+}
+
+/** 生成报表请求 */
+export interface GenerateReportRequest {
+  /** 报表类型（用于分类/筛选），如 service-analysis / expiry-analysis / overstock / unconverted / atp / sales-rep-heatmap / brand-spec / expiry-ranking / expiry-drilldown */
+  type: string;
+  /** 报表标题（全局下载列表中展示） */
+  title: string;
+  /** 下载文件名（不含扩展名，后端自动补 .xlsx） */
+  fileName: string;
+  sheets: ReportSheetData[];
+}
+
+/** 报表记录（元数据） */
+export interface ReportRecord {
+  id: string;
+  type: string;
+  title: string;
+  fileName: string;
+  fileSize: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface GenerateReportResponse {
+  report: ReportRecord;
+}
+
+export interface GetReportsParams {
+  type?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface GetReportsResponse {
+  items: ReportRecord[];
+  total: number;
 }
 
 

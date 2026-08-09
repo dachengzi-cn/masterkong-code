@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import * as expenseApi from '@/api/expense';
+import { reportApi } from '@/api/index';
 import type {
   ExpiryAnalysisFilters,
   ExpiryDrilldownResult,
@@ -10,6 +11,10 @@ import type {
   ExpiryDrilldownSpecShareRow,
   ExpiryDrilldownOfficeSpecShareRow,
   ExpiryOver500StoreDetail,
+  ReportSheetData,
+  ReportRow,
+  ReportCell,
+  ReportCellStyle,
 } from '@shared/api.interface';
 
 type DrilldownType = 'store' | 'spec';
@@ -90,7 +95,6 @@ const downloadStoreDetailsXlsx = async (
   details: ExpiryOver500StoreDetail[],
   threshold = 500,
 ) => {
-  const XLSX = await import('xlsx-js-style').then((m) => m.default || m);
   const headers = [
     '门店编码',
     '门店名称',
@@ -110,11 +114,47 @@ const downloadStoreDetailsXlsx = async (
     '金额',
     '占比',
   ];
-  const rows = details.map((d) => {
+
+  const baseHeaderStyle: ReportCellStyle = {
+    font: { bold: true, color: { rgb: '1F2937' } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: {
+      bottom: { style: 'thin', color: { rgb: 'B4C7E7' } },
+    },
+  };
+  const firstSpecHeader: ReportCellStyle = { ...baseHeaderStyle, fill: { fgColor: { rgb: 'F8CBAD' }, patternType: 'solid' } };
+  const secondSpecHeader: ReportCellStyle = { ...baseHeaderStyle, fill: { fgColor: { rgb: 'D9E1F2' }, patternType: 'solid' } };
+  const thirdSpecHeader: ReportCellStyle = { ...baseHeaderStyle, fill: { fgColor: { rgb: 'FCE4D6' }, patternType: 'solid' } };
+  const defaultHeader: ReportCellStyle = { ...baseHeaderStyle, fill: { fgColor: { rgb: 'D9E1F2' }, patternType: 'solid' } };
+
+  const headerColors: ReportCellStyle[] = [
+    defaultHeader, defaultHeader, defaultHeader, defaultHeader, defaultHeader,
+    defaultHeader, defaultHeader, defaultHeader,
+    firstSpecHeader, firstSpecHeader, firstSpecHeader,
+    secondSpecHeader, secondSpecHeader, secondSpecHeader,
+    thirdSpecHeader, thirdSpecHeader, thirdSpecHeader,
+  ];
+
+  const highShareStyle: ReportCellStyle = {
+    font: { bold: true, color: { rgb: 'FFFFFF' } },
+    fill: { fgColor: { rgb: 'FF0000' }, patternType: 'solid' },
+    alignment: { horizontal: 'center', vertical: 'center' },
+  };
+
+  const rows: ReportRow[] = [
+    headers.map((h, idx) => ({ v: h, s: headerColors[idx] ?? defaultHeader }) as ReportCell),
+  ];
+  details.forEach((d) => {
     const first = d.topSpecifications[0];
     const second = d.topSpecifications[1];
     const third = d.topSpecifications[2];
-    return [
+    const shareText = first ? `${(first.share * 100).toFixed(1)}%` : '';
+    const shareValue = parseFloat(shareText.replace('%', ''));
+    const shareCell: ReportCell = {
+      v: shareText,
+      s: !Number.isNaN(shareValue) && shareValue >= 80 ? highShareStyle : undefined,
+    };
+    rows.push([
       d.customerCode,
       d.customerName ?? '',
       d.region,
@@ -125,70 +165,34 @@ const downloadStoreDetailsXlsx = async (
       Number(d.amount.toFixed(2)),
       first?.specification ?? '',
       first ? Number(first.amount.toFixed(2)) : '',
-      first ? `${(first.share * 100).toFixed(1)}%` : '',
+      shareCell,
       second?.specification ?? '',
       second ? Number(second.amount.toFixed(2)) : '',
       second ? `${(second.share * 100).toFixed(1)}%` : '',
       third?.specification ?? '',
       third ? Number(third.amount.toFixed(2)) : '',
       third ? `${(third.share * 100).toFixed(1)}%` : '',
-    ];
+    ]);
   });
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
 
-  const baseHeaderStyle = {
-    font: { bold: true, color: { rgb: '1F2937' } },
-    alignment: { horizontal: 'center', vertical: 'center' },
-    border: {
-      bottom: { style: 'thin', color: { rgb: 'B4C7E7' } },
-    },
-  };
-  const firstSpecHeader = { ...baseHeaderStyle, fill: { fgColor: { rgb: 'F8CBAD' }, patternType: 'solid' } };
-  const secondSpecHeader = { ...baseHeaderStyle, fill: { fgColor: { rgb: 'D9E1F2' }, patternType: 'solid' } };
-  const thirdSpecHeader = { ...baseHeaderStyle, fill: { fgColor: { rgb: 'FCE4D6' }, patternType: 'solid' } };
-  const defaultHeader = { ...baseHeaderStyle, fill: { fgColor: { rgb: 'D9E1F2' }, patternType: 'solid' } };
-
-  const headerColors = [
-    defaultHeader, defaultHeader, defaultHeader, defaultHeader, defaultHeader,
-    defaultHeader, defaultHeader, defaultHeader,
-    firstSpecHeader, firstSpecHeader, firstSpecHeader,
-    secondSpecHeader, secondSpecHeader, secondSpecHeader,
-    thirdSpecHeader, thirdSpecHeader, thirdSpecHeader,
-  ];
-
-  const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1:Q1');
-  for (let col = range.s.c; col <= range.e.c; col++) {
-    const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
-    if (ws[cellRef]) {
-      ws[cellRef].s = headerColors[col] ?? defaultHeader;
-    }
-  }
-
-  const highShareStyle = {
-    font: { bold: true, color: { rgb: 'FFFFFF' } },
-    fill: { fgColor: { rgb: 'FF0000' }, patternType: 'solid' },
-    alignment: { horizontal: 'center', vertical: 'center' },
-  };
-  for (let row = 1; row <= range.e.r; row++) {
-    const shareCellRef = XLSX.utils.encode_cell({ r: row, c: 10 });
-    const shareCell = ws[shareCellRef];
-    if (shareCell && typeof shareCell.v === 'string') {
-      const shareValue = parseFloat(shareCell.v.replace('%', ''));
-      if (!Number.isNaN(shareValue) && shareValue >= 80) {
-        shareCell.s = highShareStyle;
-      }
-    }
-  }
-
-  ws['!cols'] = [
-    { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 10 },
-    { wch: 16 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
-    { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 14 },
-    { wch: 14 }, { wch: 10 },
-  ];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '门店明细');
-  XLSX.writeFile(wb, `临期≥${threshold}元门店明细_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const fileName = `临期≥${threshold}元门店明细_${new Date().toISOString().slice(0, 10)}`;
+  await reportApi.generateReport({
+    type: 'expiry-drilldown',
+    title: fileName,
+    fileName,
+    sheets: [
+      {
+        sheetName: '门店明细',
+        rows,
+        colWidths: [
+          14, 16, 12, 8, 10,
+          16, 10, 14, 14, 14,
+          10, 14, 14, 10, 14,
+          14, 10,
+        ],
+      },
+    ],
+  });
 };
 
 const StoreOver500Table: React.FC<{

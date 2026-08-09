@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 import { sql } from 'drizzle-orm';
-import { boolean, foreignKey, index, integer, jsonb, numeric, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
+import { boolean, bigint, foreignKey, index, integer, jsonb, numeric, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -234,6 +234,31 @@ export const routeProfile = pgTable("route_profile", {
 }, (table) => [
   uniqueIndex("route_profile_customer_code_key").on(table.customerCode),
   index("idx_route_profile_customer_code").on(table.customerCode),
+]);
+
+// ========== M7: 报表记录（后端生成 Excel 报表）==========
+export const reportRecord = pgTable("report_record", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // 报表类型：service-analysis / expiry-analysis / overstock / unconverted / atp / sales-rep-heatmap / brand-spec / expiry-ranking / expiry-drilldown
+  type: varchar("type", { length: 100 }).notNull(),
+  // 报表标题（全局下载列表展示）
+  title: varchar("title", { length: 500 }).notNull(),
+  // 下载文件名（含 .xlsx）
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  // 存储相对路径（server/storage/reports 下）
+  filePath: text("file_path").notNull(),
+  // 文件大小（字节）
+  fileSize: bigint("file_size", { mode: "number" }).notNull().default(0),
+  status: varchar("status", { length: 20 }).notNull().default('ready'),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+  index("idx_report_record_type").on(table.type),
+  index("idx_report_record_created").on(table.createdAt),
 ]);
 
 // table aliases

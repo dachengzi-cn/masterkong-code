@@ -73,6 +73,9 @@ const ExpenseKpiCards: React.FC<ExpenseKpiCardsProps> = ({
       <KpiCard
         label="临期费用总额"
         icon="👛"
+        hoverEffect
+        glowColor="hsl(4,72%,52%)"
+        lineColor="bg-[hsl(4,72%,52%)]"
         loading={loading}
         value={
           hasExpiryData ? (
@@ -99,6 +102,9 @@ const ExpenseKpiCards: React.FC<ExpenseKpiCardsProps> = ({
       <KpiCard
         label="环比变化"
         icon="📈"
+        hoverEffect
+        glowColor="hsl(152,60%,42%)"
+        lineColor="bg-[hsl(152,60%,42%)]"
         loading={loading}
         value={
           hasExpiryData ? (
@@ -119,6 +125,9 @@ const ExpenseKpiCards: React.FC<ExpenseKpiCardsProps> = ({
       <KpiCard
         label="涉及门店数"
         icon="🏬"
+        hoverEffect
+        glowColor="hsl(217,85%,52%)"
+        lineColor="bg-[hsl(217,85%,52%)]"
         loading={loading}
         value={
           hasExpiryData ? (
@@ -137,6 +146,9 @@ const ExpenseKpiCards: React.FC<ExpenseKpiCardsProps> = ({
       <KpiCard
         label="ATP 总付费金额"
         icon="⚡"
+        hoverEffect
+        glowColor="hsl(38,85%,48%)"
+        lineColor="bg-[hsl(38,85%,48%)]"
         loading={loading}
         value={
           <CountUp
@@ -152,6 +164,9 @@ const ExpenseKpiCards: React.FC<ExpenseKpiCardsProps> = ({
       <KpiCard
         label="ATP 投入费比"
         icon="％"
+        hoverEffect
+        glowColor="hsl(262,80%,58%)"
+        lineColor="bg-[hsl(262,80%,58%)]"
         loading={loading}
         value={
           <CountUp
@@ -167,6 +182,9 @@ const ExpenseKpiCards: React.FC<ExpenseKpiCardsProps> = ({
       <KpiCard
         label="ATP 付费点销额占比"
         icon="％"
+        hoverEffect
+        glowColor="hsl(174,72%,38%)"
+        lineColor="bg-[hsl(174,72%,38%)]"
         loading={loading}
         value={
           <CountUp

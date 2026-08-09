@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit/logger';
-import { expenseApi, customerApi } from '@client/src/api/index';
+import { expenseApi, customerApi, reportApi } from '@client/src/api/index';
 import { Button } from '@/components/ui/button';
 import {
   Empty,
@@ -16,6 +16,8 @@ import {
 import type {
   OverstockAnalysisResult,
   FilterOptions,
+  ReportRow,
+  ReportCellStyle,
 } from '@shared/api.interface';
 
 import OverstockAnalysisPanel from './OverstockAnalysisPanel';
@@ -288,10 +290,13 @@ const OverstockPage: React.FC = () => {
       const result = await expenseApi.getOverstockAnalysisExport(
         toOverstockFilters(confirmedFilters),
       );
-      const XLSX = await import('xlsx-js-style').then((m) => m.default || m);
-      const wb = XLSX.utils.book_new();
-
-      const cohortRows = [
+      const headerStyle: ReportCellStyle = {
+        font: { bold: true, color: { rgb: '000000' } },
+        fill: { fgColor: { rgb: 'C6E0B4' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
+      };
+      const rows: ReportRow[] = [
         [
           '门店编码',
           '门店名称',
@@ -303,7 +308,7 @@ const OverstockPage: React.FC = () => {
           '第5月临期额',
           '临期金额',
           '转化率',
-        ],
+        ].map((h) => ({ v: h, s: headerStyle })),
         ...result.cohorts.map((c) => [
           c.customerCode,
           c.customerName,
@@ -314,29 +319,23 @@ const OverstockPage: React.FC = () => {
           c.expiryMonth4Amount,
           c.expiryMonth5Amount,
           c.expiryAmount,
-          c.conversionRate,
-        ]),
+          { v: c.conversionRate, z: '0.00%' },
+        ] as ReportRow),
       ];
-      const ws = XLSX.utils.aoa_to_sheet(cohortRows);
-      ws['!cols'] = [
-        { wch: 16 },
-        { wch: 20 },
-        { wch: 30 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 14 },
-        { wch: 14 },
-        { wch: 14 },
-        { wch: 12 },
-      ];
-      XLSX.utils.book_append_sheet(wb, ws, '差异门店分析明细');
-
-      XLSX.writeFile(
-        wb,
-        `差异门店分析_${confirmedFilters.monthFrom ?? ''}_${confirmedFilters.monthTo ?? ''}.xlsx`,
-      );
-      toast.success('差异门店分析导出成功');
+      const fileName = `差异门店分析_${confirmedFilters.monthFrom ?? ''}_${confirmedFilters.monthTo ?? ''}`;
+      await reportApi.generateReport({
+        type: 'overstock',
+        title: fileName,
+        fileName,
+        sheets: [
+          {
+            sheetName: '差异门店分析明细',
+            rows,
+            colWidths: [16, 20, 30, 12, 12, 12, 14, 14, 14, 12],
+          },
+        ],
+      });
+      toast.success('报表已生成，请点击右上角下载按钮查看/下载');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error('Failed to export overstock analysis:', err);

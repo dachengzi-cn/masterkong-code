@@ -6,11 +6,16 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/
 import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import * as expenseApi from '@/api/expense';
+import { reportApi } from '@/api/index';
 import type {
   ExpiryAnalysisFilters,
   ExpiryRankingExportResult,
   ExpiryRankingExportSheet,
   ExpiryRankingItem,
+  ReportSheetData,
+  ReportRow,
+  ReportCell,
+  ReportCellStyle,
 } from '@shared/api.interface';
 
 type DimensionKey = 'region' | 'tier' | 'dealerType' | 'business' | 'specification';
@@ -154,68 +159,21 @@ const buildBusinessSheetMerges = (
   return merges;
 };
 
-const centerStyle = {
+const centerStyle: ReportCellStyle = {
   alignment: { horizontal: 'center', vertical: 'center' },
 };
 
-const fullBorder = {
+const fullBorder: ReportCellStyle['border'] = {
   top: { style: 'thin', color: { rgb: '000000' } },
   bottom: { style: 'thin', color: { rgb: '000000' } },
   left: { style: 'thin', color: { rgb: '000000' } },
   right: { style: 'thin', color: { rgb: '000000' } },
 };
 
-const lightYellowFill = { fgColor: { rgb: 'FFFFCC' }, patternType: 'solid' };
-
-const hideGridlinesAndDownload = async (XLSX: any, wb: any, filename: string): Promise<void> => {
-  const data = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-  const fflate = await import('fflate');
-
-  const zipData = new Uint8Array(data);
-  const unzipped = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
-    fflate.unzip(zipData, (err, result) => {
-      if (err) reject(err);
-      else resolve(result as Record<string, Uint8Array>);
-    });
-  });
-
-  const updated: Record<string, Uint8Array> = {};
-  for (const [path, content] of Object.entries(unzipped)) {
-    if (path.startsWith('xl/worksheets/sheet') && path.endsWith('.xml')) {
-      const text = new TextDecoder().decode(content);
-      const newText = text.replace(/<sheetView\b([^>]*?)(\/?>)/g, (match, attrs, close) => {
-        if (attrs.includes('showGridLines')) return match;
-        return `<sheetView${attrs} showGridLines="0"${close}`;
-      });
-      updated[path] = new TextEncoder().encode(newText);
-    } else {
-      updated[path] = content;
-    }
-  }
-
-  const zipped = await new Promise<Uint8Array>((resolve, reject) => {
-    fflate.zip(updated, { level: 6 }, (err, result) => {
-      if (err) reject(err);
-      else resolve(result);
-    });
-  });
-
-  const blob = new Blob([zipped.buffer as ArrayBuffer], { type: 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
+const lightYellowFill: ReportCellStyle['fill'] = { fgColor: { rgb: 'FFFFCC' }, patternType: 'solid' };
 
 const downloadRankingExport = async (result: ExpiryRankingExportResult): Promise<void> => {
-  const XLSX = await import('xlsx-js-style').then((m) => m.default || m);
-  const wb = XLSX.utils.book_new();
-
-  const sheets: { name: string; sheet: ExpiryRankingExportSheet }[] = [
+  const sheetList: { name: string; sheet: ExpiryRankingExportSheet }[] = [
     { name: '所别', sheet: result.region },
     { name: '阶层', sheet: result.tier },
     { name: '形态', sheet: result.dealerType },
@@ -223,59 +181,28 @@ const downloadRankingExport = async (result: ExpiryRankingExportResult): Promise
     { name: '规格', sheet: result.specification },
   ];
 
-  const headerStyle = {
+  const headerStyle: ReportCellStyle = {
     font: { bold: true, color: { rgb: '000000' } },
     fill: { fgColor: { rgb: 'C6E0B4' }, patternType: 'solid' },
     alignment: { horizontal: 'center', vertical: 'center' },
     border: fullBorder,
   };
 
-  for (const { name, sheet } of sheets) {
+  const reportSheets: ReportSheetData[] = [];
+
+  for (const { name, sheet } of sheetList) {
     const isBusiness = name === '业务';
     const { aoa, officeRowCounts } = isBusiness
       ? buildBusinessSheetAoa(sheet)
       : { aoa: buildSheetAoa(sheet), officeRowCounts: [] };
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!merges'] = isBusiness
+
+    const merges = isBusiness
       ? buildBusinessSheetMerges(officeRowCounts)
       : buildSheetMerges(sheet.offices.length);
 
     const shareColIndices = isBusiness ? [3] : [2, ...sheet.offices.map((_, i) => 5 + i * 3)];
-    const dataStartRow = isBusiness ? 1 : 2;
-    for (let row = dataStartRow; row < aoa.length; row++) {
-      for (const col of shareColIndices) {
-        const cellAddr = XLSX.utils.encode_cell({ r: row, c: col });
-        if (ws[cellAddr]) {
-          ws[cellAddr].z = '0.0%';
-        }
-      }
-    }
-
     const headerRowCount = isBusiness ? 1 : 2;
-    for (let row = 0; row < headerRowCount; row++) {
-      for (let col = 0; col < aoa[0].length; col++) {
-        const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
-        if (ws[cellRef]) ws[cellRef].s = headerStyle;
-      }
-    }
-
-    if (isBusiness) {
-      ws['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 10 }];
-      for (let row = 1; row < aoa.length; row++) {
-        const cellRef = XLSX.utils.encode_cell({ r: row, c: 0 });
-        if (ws[cellRef]) {
-          ws[cellRef].s = { ...(ws[cellRef].s || {}), ...centerStyle };
-        }
-      }
-    } else {
-      const colCount = 4 + sheet.offices.length * 3;
-      ws['!cols'] = Array.from({ length: colCount }, (_, i) => {
-        if (i === 0) return { wch: 18 };
-        if ((i - 1) % 3 === 0) return { wch: 14 };
-        if ((i - 1) % 3 === 1) return { wch: 10 };
-        return { wch: 10 };
-      });
-    }
+    const dataStartRow = isBusiness ? 1 : 2;
 
     // 标记业务 sheet 的所别小记行
     const subtotalRows = new Set<number>();
@@ -287,33 +214,49 @@ const downloadRankingExport = async (result: ExpiryRankingExportResult): Promise
       }
     }
 
-    // 为所有单元格添加黑色细线边框
-    const ref = ws['!ref'];
-    if (ref) {
-      const range = XLSX.utils.decode_range(ref);
-      for (let row = range.s.r; row <= range.e.r; row++) {
-        for (let col = range.s.c; col <= range.e.c; col++) {
-          const addr = XLSX.utils.encode_cell({ r: row, c: col });
-          const cell = ws[addr];
-          if (!cell) continue;
-          const style = { ...(cell.s || {}) };
-          style.border = fullBorder;
-          if (isBusiness && subtotalRows.has(row)) {
-            style.fill = lightYellowFill;
-          }
-          cell.s = style;
+    const rows: ReportRow[] = aoa.map((rowData, r) =>
+      rowData.map((v, c) => {
+        const s: ReportCellStyle = { border: fullBorder };
+        if (r < headerRowCount) {
+          Object.assign(s, headerStyle);
         }
-      }
-    }
+        const cell: ReportCell = { v: v as ReportCell['v'], s };
+        if (r >= dataStartRow && shareColIndices.includes(c)) {
+          cell.z = '0.0%';
+        }
+        if (isBusiness) {
+          if (subtotalRows.has(r)) s.fill = lightYellowFill;
+          if (r >= 1 && c === 0) s.alignment = centerStyle.alignment;
+        }
+        return cell;
+      }),
+    );
 
-    XLSX.utils.book_append_sheet(wb, ws, name);
+    const colCount = isBusiness ? 5 : 4 + sheet.offices.length * 3;
+    const colWidths = isBusiness
+      ? [18, 18, 14, 10, 10]
+      : Array.from({ length: colCount }, (_, i) => {
+          if (i === 0) return 18;
+          if ((i - 1) % 3 === 0) return 14;
+          return 10;
+        });
+
+    reportSheets.push({
+      sheetName: name,
+      rows,
+      merges,
+      colWidths,
+      showGridLines: false,
+    });
   }
 
-  await hideGridlinesAndDownload(
-    XLSX,
-    wb,
-    `临期费用排行明细_${new Date().toISOString().slice(0, 10)}.xlsx`,
-  );
+  const fileName = `临期费用排行明细_${new Date().toISOString().slice(0, 10)}`;
+  await reportApi.generateReport({
+    type: 'expiry-ranking',
+    title: fileName,
+    fileName,
+    sheets: reportSheets,
+  });
 };
 
 const ExpiryRankingTable: React.FC<ExpiryRankingTableProps> = ({
@@ -355,7 +298,7 @@ const ExpiryRankingTable: React.FC<ExpiryRankingTableProps> = ({
             disabled={exporting || exportDisabled}
           >
             <span className="inline-flex items-center justify-center text-base leading-none" >⬇️</span>
-            {exporting ? '导出中' : '下载明细'}
+            {exporting ? '导出中' : '临期费用明细'}
           </Button>
           <div className="flex items-center gap-0.5">
             {TABS.map((tab) => (

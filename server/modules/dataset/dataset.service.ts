@@ -34,6 +34,7 @@ import type {
   BrandSpecMonthlyStat,
   BrandSpecDimensionMonthlyStat,
   SalesRepDrilldownResponse,
+  SalesRepUnconvertedDrilldownResponse,
   SystemStatusResponse,
   CheckDuplicatesResponse,
   DatasetSpecOptions,
@@ -1466,11 +1467,17 @@ export class DatasetService implements OnModuleInit {
         // 线路筛选：支持复合线路递归匹配
         // 选中"周二"时，"周二,周六"等复合线路也会被匹配
         if (filters?.route && filters.route.length > 0) {
+          const allRoutes = ['周一', '周二', '周三', '周四', '周五', '周六'];
+          const allSelected = allRoutes.every((r) => filters.route!.includes(r));
           const customerRoute = codeToRouteMap.get(p.customerCode);
-          if (!customerRoute) return false;
-          const customerRouteDays = customerRoute.split(',').map((d: string) => d.trim());
-          const hasMatch = customerRouteDays.some((day: string) => filters.route!.includes(day));
-          if (!hasMatch) return false;
+          if (!customerRoute) {
+            // 无线路资料客户：全选线路时保留（口径与不选线路一致），部分选择时排除
+            if (!allSelected) return false;
+          } else {
+            const customerRouteDays = customerRoute.split(',').map((d: string) => d.trim());
+            const hasMatch = customerRouteDays.some((day: string) => filters.route!.includes(day));
+            if (!hasMatch) return false;
+          }
         }
         return true;
       });
@@ -2962,11 +2969,17 @@ export class DatasetService implements OnModuleInit {
         // 线路筛选：支持复合线路递归匹配
         // 选中"周二"时，"周二,周六"等复合线路也会被匹配
         if (filters?.route && filters.route.length > 0) {
+          const allRoutes = ['周一', '周二', '周三', '周四', '周五', '周六'];
+          const allSelected = allRoutes.every((r) => filters.route!.includes(r));
           const customerRoute = codeToRouteMap.get(p.customerCode);
-          if (!customerRoute) return false;
-          const customerRouteDays = customerRoute.split(',').map((d: string) => d.trim());
-          const hasMatch = customerRouteDays.some((day: string) => filters.route!.includes(day));
-          if (!hasMatch) return false;
+          if (!customerRoute) {
+            // 无线路资料客户：全选线路时保留（口径与不选线路一致），部分选择时排除
+            if (!allSelected) return false;
+          } else {
+            const customerRouteDays = customerRoute.split(',').map((d: string) => d.trim());
+            const hasMatch = customerRouteDays.some((day: string) => filters.route!.includes(day));
+            if (!hasMatch) return false;
+          }
         }
         return true;
       });
@@ -3164,6 +3177,31 @@ export class DatasetService implements OnModuleInit {
         region: row.region, tier: row.tier, salesRep: row.sales_rep, extras: row.extras ?? {},
       }));
 
+      // 线路筛选（与内存模式保持一致）：按线路资料过滤未成交客户
+      let codeToRouteMap: Map<string, string> | null = null;
+      if (filters?.route && filters.route.length > 0) {
+        const routeData = await this.routeProfileService.findAll(1, 10000);
+        codeToRouteMap = new Map<string, string>();
+        for (const route of routeData.items) {
+          codeToRouteMap.set(route.customerCode, route.routeName);
+        }
+      }
+      const applyRouteFilter = (items: UnconvertedStoreItem[]): UnconvertedStoreItem[] => {
+        if (!codeToRouteMap || items.length === 0) return items;
+        const routes = filters!.route!;
+        const allRoutes = ['周一', '周二', '周三', '周四', '周五', '周六'];
+        const allSelected = allRoutes.every((r) => routes.includes(r));
+        return items.filter((item) => {
+          const customerRoute = codeToRouteMap!.get(item.customerCode);
+          if (!customerRoute) {
+            // 无线路资料客户：全选线路时保留（口径与不选线路一致），部分选择时排除
+            return allSelected;
+          }
+          const customerRouteDays = customerRoute.split(',').map((d: string) => d.trim());
+          return customerRouteDays.some((day: string) => routes.includes(day));
+        });
+      };
+
       const selectedBrands = filters?.brand?.filter((b: string) => b) ?? [];
 
       const enrichBrandStatus = async (items: UnconvertedStoreItem[], brands: string[]): Promise<UnconvertedStoreItem[]> => {
@@ -3230,13 +3268,14 @@ export class DatasetService implements OnModuleInit {
           const vals = filters.specification.map((v: string) => "'" + v.replace(/'/g, "''") + "'").join(',');
           notExistsConditions.push("dr.content->>'产品-规格' IN (" + vals + ")");
         }
-        const cpWhere = whereClause ? `WHERE ${whereClause} ` : 'WHERE ';
+        const cpWhere = whereClause ? `WHERE ${whereClause} ` : '';
+        const notExistsPrefix = whereClause ? 'AND NOT EXISTS (' : 'WHERE NOT EXISTS (';
         const result = await this.db.execute(sql.raw(
           'SELECT cp.customer_code, cp.customer_name, cp.region, cp.tier, ' +
           "COALESCE(cp.extras->>'客户经理', '') as sales_rep, " +
           'cp.extras ' +
           'FROM customer_profile cp ' + cpWhere +
-          'AND NOT EXISTS (SELECT 1 FROM data_record dr WHERE ' +
+          notExistsPrefix + 'SELECT 1 FROM data_record dr WHERE ' +
           notExistsConditions.join(' AND ') + ')'
         ));
         let items = mapRows(result as unknown as Array<{
@@ -3246,6 +3285,7 @@ export class DatasetService implements OnModuleInit {
         if (selectedBrands.length === 1 && items.length > 0) {
           items = await enrichBrandStatus(items, selectedBrands);
         }
+        items = applyRouteFilter(items);
         this.logger.log(`Unconverted stores for dataset ${datasetId}: ${items.length} found`);
         return { items, total: items.length };
       }
@@ -3268,6 +3308,7 @@ export class DatasetService implements OnModuleInit {
           return Object.values(status).some((v) => v === 0);
         });
       }
+      items = applyRouteFilter(items);
       this.logger.log(`Unconverted stores for dataset ${datasetId}: ${items.length} found`);
       return { items, total: items.length };
     } catch (err) {
@@ -3640,6 +3681,231 @@ export class DatasetService implements OnModuleInit {
       this.logger.warn('getSalesRepDrilldown 失败: ' + (err as Error).message);
       this.useMemoryStorage = true;
       return { formatBreakdown: [], brandBreakdown: [], specificationBreakdown: [] };
+    }
+  }
+
+  /**
+   * 计算近6个月窗口：以 dateTo 所在月为最后一个月，向前共6个月（返回时间正序）
+   */
+  private computeMonthWindow(dateTo: string): string[] {
+    const parts = String(dateTo ?? '').replace(/[./]/g, '-').split('-');
+    const now = new Date();
+    const safeY = parts.length >= 1 ? parseInt(parts[0], 10) : now.getFullYear();
+    const safeM = parts.length >= 2 ? parseInt(parts[1], 10) : now.getMonth() + 1;
+    const y = Number.isFinite(safeY) ? safeY : now.getFullYear();
+    const m = Number.isFinite(safeM) ? safeM : now.getMonth() + 1;
+    const months: string[] = [];
+    let cy = y, cm = m;
+    for (let i = 0; i < 6; i++) {
+      months.unshift(`${cy}-${String(cm).padStart(2, '0')}`);
+      cm -= 1;
+      if (cm < 1) { cm = 12; cy -= 1; }
+    }
+    return months;
+  }
+
+  /**
+   * 公共计算：由服务门店集合 + 各门店成交月份集合，构建业代未成交下钻响应
+   * 每月未成交 = 服务门店数 - 该月有成交记录的门店数
+   * 连续N个月未成交 = 6个月窗口内存在连续N个自然月无任何成交记录的门店数
+   */
+  private buildSalesRepUnconvertedDrilldown(
+    salesRep: string,
+    region: string,
+    tier: string,
+    serviceCodes: Set<string>,
+    dealtMonths: Map<string, Set<string>>,
+    dateTo: string,
+  ): SalesRepUnconvertedDrilldownResponse {
+    const months = this.computeMonthWindow(dateTo);
+    const serviceStores = serviceCodes.size;
+
+    const monthItems = months.map((month) => {
+      const [yy, mm] = month.split('-').map(Number);
+      let dealt = 0;
+      for (const set of dealtMonths.values()) {
+        if (set.has(month)) dealt += 1;
+      }
+      return {
+        month,
+        monthLabel: `${yy}年${mm}月`,
+        serviceStores,
+        unconvertedStores: Math.max(0, serviceStores - dealt),
+      };
+    }).reverse(); // 最近月在前
+
+    let consecutive2Months = 0;
+    let consecutive3Months = 0;
+    for (const code of serviceCodes) {
+      const set = dealtMonths.get(code) ?? new Set<string>();
+      let run = 0, maxRun = 0;
+      for (const month of months) {
+        run = set.has(month) ? 0 : run + 1;
+        maxRun = Math.max(maxRun, run);
+      }
+      if (maxRun >= 2) consecutive2Months += 1;
+      if (maxRun >= 3) consecutive3Months += 1;
+    }
+
+    return { salesRep, region, tier, months: monthItems, consecutive2Months, consecutive3Months };
+  }
+
+  /**
+   * 业代未成交门店下钻：近6个月分月未成交门店数 + 连续2/3个月未成交门店数（内存模式）
+   */
+  private getSalesRepUnconvertedDrilldownMemory(
+    datasetId: string,
+    salesRep: string,
+    region: string,
+    tier: string,
+    dateTo: string,
+  ): SalesRepUnconvertedDrilldownResponse {
+    const empty = (): SalesRepUnconvertedDrilldownResponse => ({
+      salesRep, region, tier, months: [], consecutive2Months: 0, consecutive3Months: 0,
+    });
+    try {
+      const allProfiles = this.customerProfileService.getAllProfiles();
+      const serviceCodes = new Set<string>();
+      for (const p of allProfiles) {
+        if (region && p.region !== region) continue;
+        if (tier && p.tier !== tier) continue;
+        if (String(p.extras?.['客户经理'] ?? '') !== salesRep) continue;
+        serviceCodes.add(p.customerCode);
+      }
+      if (serviceCodes.size === 0) return empty();
+
+      const months = this.computeMonthWindow(dateTo);
+      const memDataset = this.datasetStore.get(datasetId);
+      const dealtMonths = new Map<string, Set<string>>();
+      if (memDataset && memDataset.records.length > 0) {
+        const fields = memDataset.fields;
+        let codeField = this.findCustomerCodeField(fields);
+        let dateField = this.findDateField(fields);
+        const sampleKeys = Object.keys(memDataset.records[0] ?? {});
+        if (codeField && !sampleKeys.includes(codeField)) {
+          const fb = sampleKeys.find((k: string) => /客户.*编码|customer.*code|编码/i.test(k.toLowerCase()))
+            ?? sampleKeys.find((k: string) => /编码|code/i.test(k.toLowerCase()));
+          if (fb) { codeField = fb; }
+        }
+        if (dateField && !sampleKeys.includes(dateField)) {
+          const fb = sampleKeys.find((k: string) => /日期|date|时间/i.test(k.toLowerCase()))
+            ?? sampleKeys.find((k: string) => /date|日期/i.test(k.toLowerCase()));
+          if (fb) { dateField = fb; }
+        }
+        for (const record of memDataset.records) {
+          if (!record || typeof record !== 'object') continue;
+          const cd = String(record[codeField ?? ''] ?? '').trim();
+          const dd = String(record[dateField ?? ''] ?? '').trim();
+          if (!cd || !dd || !serviceCodes.has(cd)) continue;
+          const normalized = dd.replace(/[./]/g, '-');
+          const parts = normalized.split('-');
+          if (parts.length !== 3) continue;
+          const month = `${parts[0]}-${String(parseInt(parts[1], 10)).padStart(2, '0')}`;
+          if (!months.includes(month)) continue;
+          if (!dealtMonths.has(cd)) dealtMonths.set(cd, new Set());
+          dealtMonths.get(cd)!.add(month);
+        }
+      }
+      return this.buildSalesRepUnconvertedDrilldown(salesRep, region, tier, serviceCodes, dealtMonths, dateTo);
+    } catch (err) {
+      this.logger.warn('[Memory] getSalesRepUnconvertedDrilldownMemory 失败: ' + (err as Error).message);
+      return empty();
+    }
+  }
+
+  /**
+   * 业代未成交门店下钻：近6个月分月未成交门店数 + 连续2/3个月未成交门店数
+   */
+  async getSalesRepUnconvertedDrilldown(
+    datasetId: string,
+    salesRep: string,
+    region: string,
+    tier: string,
+    dateTo: string,
+  ): Promise<SalesRepUnconvertedDrilldownResponse> {
+    if (this.useMemoryStorage) {
+      return this.getSalesRepUnconvertedDrilldownMemory(datasetId, salesRep, region, tier, dateTo);
+    }
+    const empty = (): SalesRepUnconvertedDrilldownResponse => ({
+      salesRep, region, tier, months: [], consecutive2Months: 0, consecutive3Months: 0,
+    });
+    try {
+      const safeDatasetId = datasetId.replace(/'/g, "''");
+      const safeSalesRep = salesRep.replace(/'/g, "''");
+      const safeRegion = region.replace(/'/g, "''");
+      const safeTier = tier.replace(/'/g, "''");
+      const profileWhere = [
+        "COALESCE(extras->>'客户经理', '') = '" + safeSalesRep + "'",
+      ];
+      if (region) profileWhere.push("region = '" + safeRegion + "'");
+      if (tier) profileWhere.push("tier = '" + safeTier + "'");
+      const profileResult = await this.db.execute(sql.raw(
+        'SELECT customer_code FROM customer_profile WHERE ' + profileWhere.join(' AND ')
+      ));
+      const serviceCodes = new Set<string>();
+      for (const row of profileResult as unknown as Array<{ customer_code: string }>) {
+        serviceCodes.add(row.customer_code);
+      }
+      if (serviceCodes.size === 0) return empty();
+
+      const months = this.computeMonthWindow(dateTo);
+      const windowStart = months[0] + '-01';
+
+      const fields = await this.getDatasetFields(datasetId);
+      let codeField = this.findCustomerCodeField(fields);
+      let dateField = this.findDateField(fields);
+      // 采样验证字段名（与 getUnconvertedStores 一致）
+      const sample = await this.db.execute(sql.raw(
+        "SELECT content FROM data_record WHERE dataset_id = '" + safeDatasetId + "' AND content_hash IS NOT NULL LIMIT 1"
+      ));
+      if (sample.length > 0) {
+        const sContent = (sample[0] as { content: Record<string, unknown> }).content;
+        if (sContent && typeof sContent === 'object') {
+          const sKeys = Object.keys(sContent);
+          if (codeField && !sKeys.includes(codeField)) {
+            const fb = sKeys.find((k: string) => /客户.*编码|customer.*code|编码/i.test(k.toLowerCase()))
+              ?? sKeys.find((k: string) => /编码|code/i.test(k.toLowerCase()));
+            if (fb) { codeField = fb; }
+          }
+          if (dateField && !sKeys.includes(dateField)) {
+            const fb = sKeys.find((k: string) => /日期|date|时间/i.test(k.toLowerCase()))
+              ?? sKeys.find((k: string) => /date|日期/i.test(k.toLowerCase()));
+            if (fb) { dateField = fb; }
+          }
+        }
+      }
+      const safeCodeField = (codeField ?? '客户-通路客户编码').replace(/'/g, "''");
+      const safeDateField = (dateField ?? '订单-订单日期').replace(/'/g, "''");
+
+      const dealtMonths = new Map<string, Set<string>>();
+      const codesArr = Array.from(serviceCodes);
+      const batchSize = 500;
+      for (let i = 0; i < codesArr.length; i += batchSize) {
+        const batch = codesArr.slice(i, i + batchSize);
+        const codeList = batch.map((c) => "'" + c.replace(/'/g, "''") + "'").join(',');
+        const rows = await this.db.execute(sql.raw(
+          "SELECT REPLACE(REPLACE(dr.content->>'" + safeDateField + "', '.', '-'), '/', '-') AS order_date, " +
+          "dr.content->>'" + safeCodeField + "' AS customer_code " +
+          "FROM data_record dr WHERE dr.dataset_id = '" + safeDatasetId + "' " +
+          "AND dr.content->>'" + safeCodeField + "' IN (" + codeList + ") " +
+          "AND REPLACE(REPLACE(dr.content->>'" + safeDateField + "', '.', '-'), '/', '-') >= '" + windowStart + "' " +
+          "AND REPLACE(REPLACE(dr.content->>'" + safeDateField + "', '.', '-'), '/', '-') <= '" + dateTo + "'"
+        ));
+        for (const row of rows as unknown as Array<{ order_date: string; customer_code: string }>) {
+          const orderDate = String(row.order_date ?? '');
+          const match = orderDate.match(/^(\d{4})-(\d{1,2})/);
+          if (!match) continue;
+          const month = `${match[1]}-${String(parseInt(match[2], 10)).padStart(2, '0')}`;
+          if (!months.includes(month)) continue;
+          if (!dealtMonths.has(row.customer_code)) dealtMonths.set(row.customer_code, new Set());
+          dealtMonths.get(row.customer_code)!.add(month);
+        }
+      }
+      return this.buildSalesRepUnconvertedDrilldown(salesRep, region, tier, serviceCodes, dealtMonths, dateTo);
+    } catch (err) {
+      this.logger.warn('getSalesRepUnconvertedDrilldown 失败: ' + (err as Error).message);
+      this.useMemoryStorage = true;
+      return empty();
     }
   }
 

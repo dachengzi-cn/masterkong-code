@@ -6,9 +6,13 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { getOverstockAnalysisExport } from '@/api/expense';
+import { reportApi } from '@/api';
 import type {
   OverstockAnalysisResult,
   OverstockAnalysisExportResult,
+  ReportSheetData,
+  ReportRow,
+  ReportCellStyle,
 } from '@shared/api.interface';
 import type { ExpenseOverviewFilters } from '../ExpensePage/expense-overview.types';
 import { formatCurrency, formatPercent } from '../ExpensePage/expense-overview.utils';
@@ -32,89 +36,52 @@ const EmptyRow: React.FC = () => (
   </tr>
 );
 
-const hideGridlinesAndDownload = async (XLSX: any, wb: any, filename: string): Promise<void> => {
-  const data = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-  const fflate = await import('fflate');
-
-  const zipData = new Uint8Array(data);
-  const unzipped = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
-    fflate.unzip(zipData, (err, result) => {
-      if (err) reject(err);
-      else resolve(result as Record<string, Uint8Array>);
-    });
-  });
-
-  const updated: Record<string, Uint8Array> = {};
-  for (const [path, content] of Object.entries(unzipped)) {
-    if (path.startsWith('xl/worksheets/sheet') && path.endsWith('.xml')) {
-      const text = new TextDecoder().decode(content);
-      const newText = text.replace(/<sheetView\b([^>]*?)(\/?>)/g, (match, attrs, close) => {
-        if (attrs.includes('showGridLines')) return match;
-        return `<sheetView${attrs} showGridLines="0"${close}`;
-      });
-      updated[path] = new TextEncoder().encode(newText);
-    } else {
-      updated[path] = content;
-    }
-  }
-
-  const zipped = await new Promise<Uint8Array>((resolve, reject) => {
-    fflate.zip(updated, { level: 6 }, (err, result) => {
-      if (err) reject(err);
-      else resolve(result);
-    });
-  });
-
-  const blob = new Blob([zipped.buffer as ArrayBuffer], { type: 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
-
 const downloadOverstockExport = async (result: OverstockAnalysisExportResult, filename: string): Promise<void> => {
-  const XLSX = await import('xlsx-js-style').then((m) => m.default || m);
-  const wb = XLSX.utils.book_new();
-
-  const headerStyle = {
+  const headerStyle: ReportCellStyle = {
     font: { bold: true, color: { rgb: '000000' } },
-    fill: { fgColor: { rgb: 'C6E0B4' }, patternType: 'solid' },
+    fill: { fgColor: { rgb: 'C6E0B4' } },
     alignment: { horizontal: 'center', vertical: 'center' },
     border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
   };
 
-  const centerStyle = {
+  const centerStyle: ReportCellStyle = {
     alignment: { horizontal: 'center', vertical: 'center' },
   };
 
-  const addSheet = (name: string, rows: unknown[][], cols: { wch: number }[]) => {
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    for (let col = 0; col < (rows[0] as unknown[]).length; col++) {
-      const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
-      if (ws[cellRef]) ws[cellRef].s = headerStyle;
-    }
-    ws['!cols'] = cols;
-    XLSX.utils.book_append_sheet(wb, ws, name);
-  };
+  const styleHeader = (rows: ReportRow[]): ReportRow[] =>
+    rows.map((row, ri) =>
+      ri === 0
+        ? row.map((cell) => {
+            const value =
+              typeof cell === 'object' && cell !== null && 'v' in cell
+                ? cell.v
+                : cell;
+            return { v: value as string | number | boolean | null, s: headerStyle };
+          })
+        : row,
+    );
+
+  const sheets: ReportSheetData[] = [];
 
   // 汇总
-  const summaryRows = [
+  const summaryRows: ReportRow[] = [
     ['指标', '数值'],
     ['总进货金额', result.summary.totalPurchaseAmount],
     ['总临期金额', result.summary.totalExpiryAmount],
-    ['平均转化率', result.summary.avgConversionRate],
+    ['平均转化率', { v: result.summary.avgConversionRate, z: '0.00%' }],
     ['标记门店数', result.summary.flaggedStoreCount],
     ['标记业代数', result.summary.flaggedRepCount],
-    ['阈值（mean + 2σ）', result.summary.threshold],
+    ['阈值（mean + 2σ）', { v: result.summary.threshold, z: '0.00%' }],
   ];
-  addSheet('汇总', summaryRows, [{ wch: 20 }, { wch: 16 }]);
+  sheets.push({
+    sheetName: '汇总',
+    rows: styleHeader(summaryRows),
+    colWidths: [20, 16],
+    showGridLines: false,
+  });
 
   // 风险门店
-  const storeRows = [
+  const storeRows: ReportRow[] = [
     ['门店编码', '门店名称', '所别', '业代', '进货金额', '进货数量', '临期金额', '转化率', '是否标记'],
     ...result.storeRisks.map((r) => [
       r.customerCode,
@@ -124,28 +91,19 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
       r.purchaseAmount,
       r.purchaseQuantity,
       r.expiryAmount,
-      r.conversionRate,
+      { v: r.conversionRate, z: '0.00%', s: centerStyle },
       r.isFlagged ? '是' : '否',
-    ]),
+    ] as ReportRow),
   ];
-  addSheet(
-    '风险门店',
-    storeRows,
-    [
-      { wch: 16 },
-      { wch: 20 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 14 },
-      { wch: 12 },
-      { wch: 12 },
-    ],
-  );
+  sheets.push({
+    sheetName: '风险门店',
+    rows: styleHeader(storeRows),
+    colWidths: [16, 20, 14, 14, 12, 12, 14, 12, 12],
+    showGridLines: false,
+  });
 
   // 风险业代
-  const repRows = [
+  const repRows: ReportRow[] = [
     ['业代', '所别', '负责门店数', '进货金额', '进货数量', '临期金额', '转化率', '是否标记'],
     ...result.repRisks.map((r) => [
       r.salesRep,
@@ -154,30 +112,37 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
       r.purchaseAmount,
       r.purchaseQuantity,
       r.expiryAmount,
-      r.conversionRate,
+      { v: r.conversionRate, z: '0.00%', s: centerStyle },
       r.isFlagged ? '是' : '否',
-    ]),
+    ] as ReportRow),
   ];
-  addSheet('风险业代', repRows, [
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 12 },
-    { wch: 12 },
-  ]);
+  sheets.push({
+    sheetName: '风险业代',
+    rows: styleHeader(repRows),
+    colWidths: [14, 14, 12, 12, 12, 14, 12, 12],
+    showGridLines: false,
+  });
 
   // 规格风险
-  const specRows = [
+  const specRows: ReportRow[] = [
     ['规格', '进货金额', '进货数量', '临期金额', '转化率'],
-    ...result.specRisks.map((r) => [r.specification, r.purchaseAmount, r.purchaseQuantity, r.expiryAmount, r.conversionRate]),
+    ...result.specRisks.map((r) => [
+      r.specification,
+      r.purchaseAmount,
+      r.purchaseQuantity,
+      r.expiryAmount,
+      { v: r.conversionRate, z: '0.00%', s: centerStyle },
+    ] as ReportRow),
   ];
-  addSheet('规格风险', specRows, [{ wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }]);
+  sheets.push({
+    sheetName: '规格风险',
+    rows: styleHeader(specRows),
+    colWidths: [30, 12, 12, 14, 12],
+    showGridLines: false,
+  });
 
   // Cohort 明细
-  const cohortRows = [
+  const cohortRows: ReportRow[] = [
     [
       '门店编码',
       '门店名称',
@@ -200,51 +165,17 @@ const downloadOverstockExport = async (result: OverstockAnalysisExportResult, fi
       c.expiryMonth4Amount,
       c.expiryMonth5Amount,
       c.expiryAmount,
-      c.conversionRate,
-    ]),
+      { v: c.conversionRate, z: '0.00%', s: centerStyle },
+    ] as ReportRow),
   ];
-  addSheet('Cohort明细', cohortRows, [
-    { wch: 16 },
-    { wch: 20 },
-    { wch: 30 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 12 },
-  ]);
-
-  // 转化率列设置为百分比格式
-  const percentStyle = { z: '0.00%' };
-  const percentSheets: Record<string, number[]> = {
-    汇总: [1],
-    风险门店: [7],
-    风险业代: [6],
-    规格风险: [4],
-    Cohort明细: [9],
-  };
-  wb.SheetNames.forEach((sheetName: string) => {
-    const ws = wb.Sheets[sheetName];
-    const cols = percentSheets[sheetName] ?? [];
-    const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1');
-    for (let row = 1; row <= range.e.r; row++) {
-      for (const col of cols) {
-        const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
-        if (ws[cellRef]) {
-          ws[cellRef].z = percentStyle.z;
-          ws[cellRef].s = { ...(ws[cellRef].s || {}), ...centerStyle };
-        }
-      }
-    }
+  sheets.push({
+    sheetName: 'Cohort明细',
+    rows: styleHeader(cohortRows),
+    colWidths: [16, 20, 30, 12, 12, 12, 14, 14, 14, 12],
+    showGridLines: false,
   });
 
-  await hideGridlinesAndDownload(
-    XLSX,
-    wb,
-    filename,
-  );
+  await reportApi.generateReport({ type: 'overstock', title: filename, fileName: filename, sheets });
 };
 
 const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
@@ -270,9 +201,9 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
     setExporting(true);
     try {
       const result = await getOverstockAnalysisExport(filters);
-      const filename = `差异门店分析_${filters.monthFrom ?? ''}_${filters.monthTo ?? ''}.xlsx`;
+      const filename = `差异门店分析_${filters.monthFrom ?? ''}_${filters.monthTo ?? ''}`;
       await downloadOverstockExport(result, filename);
-      toast.success('差异门店分析导出成功');
+      toast.success('报表已生成，请点击右上角下载按钮查看/下载');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error('Failed to export overstock analysis:', err);
@@ -296,7 +227,7 @@ const OverstockAnalysisPanel: React.FC<OverstockAnalysisPanelProps> = ({
           disabled={exporting || loading || !hasData}
         >
           <span className="inline-flex items-center justify-center text-base leading-none">⬇️</span>
-          {exporting ? '导出中' : '下载差异门店分析'}
+          {exporting ? '导出中' : '差异门店分析'}
         </Button>
       </div>
 

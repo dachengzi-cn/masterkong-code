@@ -33,6 +33,9 @@ const ServiceKpiCards: React.FC<ServiceKpiCardsProps> = ({
       <KpiCard
         label="总服务点数"
         icon="📍"
+        hoverEffect
+        glowColor="hsl(217,85%,52%)"
+        lineColor="bg-[hsl(217,85%,52%)]"
         loading={loading}
         value={
           hasData ? (
@@ -59,6 +62,9 @@ const ServiceKpiCards: React.FC<ServiceKpiCardsProps> = ({
         label="付费点数"
         icon="✅"
         variant="success"
+        hoverEffect
+        glowColor="hsl(152,60%,42%)"
+        lineColor="bg-[hsl(152,60%,42%)]"
         loading={loading}
         value={
           hasData ? (
@@ -84,6 +90,9 @@ const ServiceKpiCards: React.FC<ServiceKpiCardsProps> = ({
       <KpiCard
         label="付费覆盖率"
         icon="％"
+        hoverEffect
+        glowColor="hsl(262,80%,58%)"
+        lineColor="bg-[hsl(262,80%,58%)]"
         loading={loading}
         value={
           hasData ? (
@@ -110,6 +119,9 @@ const ServiceKpiCards: React.FC<ServiceKpiCardsProps> = ({
       <KpiCard
         label="点均销额"
         icon="📈"
+        hoverEffect
+        glowColor="hsl(38,85%,48%)"
+        lineColor="bg-[hsl(38,85%,48%)]"
         loading={loading}
         value={
           hasData ? (
@@ -136,6 +148,9 @@ const ServiceKpiCards: React.FC<ServiceKpiCardsProps> = ({
       <KpiCard
         label="活跃业代数"
         icon="👥"
+        hoverEffect
+        glowColor="hsl(174,72%,38%)"
+        lineColor="bg-[hsl(174,72%,38%)]"
         loading={loading}
         value={
           hasData ? (
@@ -162,6 +177,9 @@ const ServiceKpiCards: React.FC<ServiceKpiCardsProps> = ({
         label="未成交点数"
         icon="❌"
         variant="error"
+        hoverEffect
+        glowColor="hsl(4,72%,52%)"
+        lineColor="bg-[hsl(4,72%,52%)]"
         loading={loading}
         value={
           hasData ? (

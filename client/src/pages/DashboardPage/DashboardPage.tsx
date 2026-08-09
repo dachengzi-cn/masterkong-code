@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { datasetApi } from '@client/src/api/index';
-import type { DatasetDetail, HeatmapFilterParams, UnconvertedStoreItem, TimeGranularity, HeatmapResponse } from '@shared/api.interface';
+import type { DatasetDetail, HeatmapFilterParams, TimeGranularity, HeatmapResponse } from '@shared/api.interface';
 import { getDealerTypesForCompositeFormats } from './composite-format';
 import { DEFAULT_SHEET_TYPES } from './FilterBar';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '@/components/ui/empty';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import FilterBar from './FilterBar';
 import type { DateRangeValue } from './FilterBar';
 import SalesRepHeatmap from './SalesRepHeatmap';
+import UnconvertedStoresQueryPanel from './UnconvertedStoresQueryPanel';
 import { AiAnalysisPanel } from '@/components/business-ui/ai-analysis-panel';
 
 const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cumulative' }) => {
@@ -129,116 +130,6 @@ const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cu
     setQuerying(true);
   };
 
-  const handleDownloadUnconverted = async (selectedRoutes: string[]) => {
-    if (!datasetId) return;
-    if (!selectedRoutes || selectedRoutes.length === 0) {
-      toast.error('请至少选择一条线路');
-      return;
-    }
-    try {
-      const filtersWithRoute = { ...effectiveFilters, route: selectedRoutes };
-      const result = await datasetApi.getUnconvertedStores(datasetId, dateFrom, dateTo, filtersWithRoute);
-      const items: UnconvertedStoreItem[] = result.items;
-      if (items.length === 0) {
-        toast.info('当前筛选条件下没有未成交门店');
-        return;
-      }
-      const XLSX = await import('xlsx-js-style');
-      const wb = XLSX.utils.book_new();
-      const tierGroups = new Map<string, UnconvertedStoreItem[]>();
-      for (const item of items) {
-        const key = item.region || '未知';
-        if (!tierGroups.has(key)) tierGroups.set(key, []);
-        tierGroups.get(key)!.push(item);
-      }
-      const sortedTiers = Array.from(tierGroups.keys()).sort();
-      for (const tier of sortedTiers) {
-        const groupItems = tierGroups.get(tier)!;
-        const groupExtraKeys = new Set<string>();
-        for (const item of groupItems) {
-          if (item.extras) {
-            for (const key of Object.keys(item.extras)) {
-              groupExtraKeys.add(key);
-            }
-          }
-        }
-        const groupExtraHeaders = Array.from(groupExtraKeys);
-
-        // 判断是否使用矩阵格式（有brandStatus字段且选择了品牌）
-        const hasBrandStatus = groupItems.some((item: UnconvertedStoreItem) => item.brandStatus && Object.keys(item.brandStatus).length > 0);
-        const brandColumns = hasBrandStatus
-          ? Object.keys(groupItems[0].brandStatus || {}).sort()
-          : [];
-
-        const groupHeaders = ['客户编码', '客户名称', '所别', '层级', '业代', ...groupExtraHeaders, ...brandColumns];
-
-        const groupRows: (string | number)[][] = [];
-        const cellStyles: Array<Array<{ fill?: { fgColor?: { rgb: string } }; font?: { bold?: boolean; color?: { rgb: string } } } | null>> = [];
-
-        for (const item of groupItems) {
-          const row: (string | number)[] = [
-            item.customerCode,
-            item.customerName,
-            item.region,
-            item.tier,
-            item.salesRep,
-            ...groupExtraHeaders.map((h: string) => {
-              const val = item.extras?.[h];
-              return val != null ? String(val) : '';
-            }),
-          ];
-          const styles: (null | { fill?: { fgColor?: { rgb: string } }; font?: { bold?: boolean; color?: { rgb: string } } })[] = new Array(row.length).fill(null);
-
-          // 添加品牌列数据
-          for (const brand of brandColumns) {
-            const val = item.brandStatus?.[brand] ?? '';
-            row.push(val);
-            // 值为0的单元格：红色背景，白色加粗字体
-            if (val === 0) {
-              styles.push({
-                fill: { fgColor: { rgb: 'FF0000' } },
-                font: { bold: true, color: { rgb: 'FFFFFF' } },
-              });
-            } else {
-              styles.push(null);
-            }
-          }
-
-          groupRows.push(row);
-          cellStyles.push(styles);
-        }
-
-        const ws = XLSX.utils.aoa_to_sheet([groupHeaders, ...groupRows]);
-
-        // 应用单元格样式
-        if (hasBrandStatus && ws['!ref']) {
-          const range = XLSX.utils.decode_range(ws['!ref']);
-          for (let R = 1; R <= range.e.r; ++R) {
-            for (let C = 0; C <= range.e.c; ++C) {
-              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-              const style = cellStyles[R - 1]?.[C];
-              if (style && ws[cellAddress]) {
-                ws[cellAddress].s = style;
-              }
-            }
-          }
-        }
-
-        const sheetName = tier.length > 31 ? tier.substring(0, 28) + '...' : tier;
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      }
-      const fromD = dateRange.from;
-      const toD = dateRange.to;
-      const fromLabel = `${fromD.getFullYear()}年${fromD.getMonth() + 1}月${fromD.getDate()}日`;
-      const toLabel = `${toD.getFullYear()}年${toD.getMonth() + 1}月${toD.getDate()}日`;
-      XLSX.writeFile(wb, `${fromLabel}-${toLabel}期间未成交门店明细.xlsx`);
-      toast.success(`已导出 ${items.length} 家未成交门店（${sortedTiers.length} 个所）`);
-    } catch {
-      toast.error('导出失败，请重试');
-      logger.error('Failed to download unconverted stores');
-    }
-  };
-
   useEffect(() => {
     if (rawDatasetId) {
       setResolvedId(rawDatasetId);
@@ -310,7 +201,6 @@ const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cu
         datasetId={datasetId}
         filters={filters}
         onFiltersChange={setFilters}
-        onDownloadUnconverted={handleDownloadUnconverted}
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
         onReset={() => setDateRange(defaultDateRange)}
@@ -328,18 +218,28 @@ const DashboardPage: React.FC<{ mode?: 'cumulative' | 'daily' }> = ({ mode = 'cu
       />
       {datasetId && (
         effectiveCommittedFilters && committedDateFrom && committedDateTo && committedGranularity ? (
-          <SalesRepHeatmap
-            datasetId={datasetId}
-            filters={effectiveCommittedFilters}
-            dateFrom={committedDateFrom}
-            dateTo={committedDateTo}
-            granularity={granularity}
-            committedGranularity={committedGranularity}
-            onGranularityChange={setGranularity}
-            onCommittedGranularityChange={setCommittedGranularity}
-            onLoadingChange={setQuerying}
-            onDataChange={setHeatmapData}
-          />
+          <>
+            <SalesRepHeatmap
+              datasetId={datasetId}
+              filters={effectiveCommittedFilters}
+              dateFrom={committedDateFrom}
+              dateTo={committedDateTo}
+              granularity={granularity}
+              committedGranularity={committedGranularity}
+              onGranularityChange={setGranularity}
+              onCommittedGranularityChange={setCommittedGranularity}
+              onLoadingChange={setQuerying}
+              onDataChange={setHeatmapData}
+            />
+            {mode === 'cumulative' && (
+              <UnconvertedStoresQueryPanel
+                datasetId={datasetId}
+                filters={effectiveCommittedFilters}
+                dateFrom={committedDateFrom}
+                dateTo={committedDateTo}
+              />
+            )}
+          </>
         ) : (
           <div className="flex items-center justify-center min-h-[400px] bg-card border border-border rounded-sm">
             <Empty className="border-none">

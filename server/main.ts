@@ -83,6 +83,8 @@ async function bootstrap() {
 
   await configureApp(app, {
     disableSwagger: true,
+    // 报表生成需上传较大的 Excel 描述数据（热力图/明细报表可达数十 MB），默认 1mb 限制会报 PayloadTooLargeError
+    bodyLimit: process.env.BODY_SIZE_LIMIT || '100mb',
   });
 
   app.setBaseViewsDir(staticRoot);

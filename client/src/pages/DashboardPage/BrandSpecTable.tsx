@@ -13,7 +13,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import MultiSelect from '@/components/ui/multi-select';
-import { datasetApi } from '@client/src/api/index';
+import { datasetApi, reportApi } from '@client/src/api/index';
 import type {
   HeatmapRow,
   HeatmapRowType,
@@ -21,6 +21,10 @@ import type {
   DatasetSpecOptions,
   BrandSpecStatsRow,
   BrandSpecDimensionMonthlyStat,
+  ReportSheetData,
+  ReportRow,
+  ReportCell,
+  ReportCellStyle,
 } from '@shared/api.interface';
 import { extractChineseName } from './tableFormat';
 
@@ -371,7 +375,33 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
       return;
     }
     try {
-      const XLSX = await import('xlsx-js-style');
+      const blackBorder = {
+        top: { style: 'thin', color: { rgb: '000000' } },
+        bottom: { style: 'thin', color: { rgb: '000000' } },
+        left: { style: 'thin', color: { rgb: '000000' } },
+        right: { style: 'thin', color: { rgb: '000000' } },
+      } satisfies ReportCellStyle['border'];
+      const headerStyle: ReportCellStyle = {
+        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '2B7CD3' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: blackBorder,
+      };
+      const tierRowStyle: ReportCellStyle = {
+        fill: { fgColor: { rgb: 'E6F0FA' } },
+        border: blackBorder,
+      };
+      const regionRowStyle: ReportCellStyle = {
+        fill: { fgColor: { rgb: 'E8EAED' } },
+        border: blackBorder,
+      };
+      const totalRowStyle: ReportCellStyle = {
+        fill: { fgColor: { rgb: 'D1D5DB' } },
+        border: blackBorder,
+      };
+      const dataRowStyle: ReportCellStyle = {
+        border: blackBorder,
+      };
       const headers: string[] = ['所别', '阶层', '业代', '点数', '合计箱数'];
       for (const col of addedColumns) {
         const label = getColumnLabel(col.values);
@@ -381,89 +411,52 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
         headers.push(`${label} 近期三个月成交门店数`);
       }
 
-      const dataRows: (string | number)[][] = displayRows.map((row) => {
-        const rowData: (string | number)[] = [
-          getRegionCell(row),
-          getTierCell(row),
-          getSalesRepCell(row),
-          row.servicePoints ?? 0,
-          row.totalOrders ?? 0,
+      const dataRows: ReportRow[] = displayRows.map((row) => {
+        const rowStyle: ReportCellStyle =
+          row.rowType === 'tier'
+            ? tierRowStyle
+            : row.rowType === 'region'
+              ? regionRowStyle
+              : row.rowType === 'total'
+                ? totalRowStyle
+                : dataRowStyle;
+        const rowData: ReportRow = [
+          { v: getRegionCell(row), s: rowStyle },
+          { v: getTierCell(row), s: rowStyle },
+          { v: getSalesRepCell(row), s: rowStyle },
+          { v: row.servicePoints ?? 0, s: rowStyle, z: '#,##0' },
+          { v: row.totalOrders ?? 0, s: rowStyle, z: '#,##0' },
         ];
         for (const col of addedColumns) {
           const key = getRowKey(row);
           const boxCount = col.data[key] ?? 0;
           const total = mainTotalMap[key] ?? 0;
-          rowData.push(boxCount);
-          rowData.push(total > 0 ? boxCount / total : 0);
-          rowData.push(col.threeMonthData[key] ?? 0);
-          rowData.push(col.threeMonthStoreCountData[key] ?? 0);
+          rowData.push({ v: boxCount, s: rowStyle, z: '#,##0' });
+          rowData.push({ v: total > 0 ? boxCount / total : 0, s: rowStyle, z: '0.00%' });
+          rowData.push({ v: col.threeMonthData[key] ?? 0, s: rowStyle, z: '#,##0' });
+          rowData.push({ v: col.threeMonthStoreCountData[key] ?? 0, s: rowStyle, z: '#,##0' });
         }
         return rowData;
       });
 
-      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-      const blackBorder = {
-        top: { style: 'thin', color: { rgb: '000000' } },
-        bottom: { style: 'thin', color: { rgb: '000000' } },
-        left: { style: 'thin', color: { rgb: '000000' } },
-        right: { style: 'thin', color: { rgb: '000000' } },
-      };
-      const headerStyle = {
-        font: { bold: true, color: { rgb: 'FFFFFF' } },
-        fill: { fgColor: { rgb: '2B7CD3' } },
-        alignment: { horizontal: 'center', vertical: 'center' },
-        border: blackBorder,
-      };
-      const tierRowStyle = {
-        fill: { fgColor: { rgb: 'E6F0FA' } },
-        border: blackBorder,
-      };
-      const regionRowStyle = {
-        fill: { fgColor: { rgb: 'E8EAED' } },
-        border: blackBorder,
-      };
-      const totalRowStyle = {
-        fill: { fgColor: { rgb: 'D1D5DB' } },
-        border: blackBorder,
-      };
-      const dataRowStyle = {
-        border: blackBorder,
-      };
-      if (ws['!ref']) {
-        const range = XLSX.utils.decode_range(ws['!ref']);
-        const textColumns = new Set([0, 1, 2]);
-        const isRatioColumn = (c: number) => c >= 5 && ((c - 5) % 4 === 1);
-        const isNumericColumn = (c: number) => !textColumns.has(c) && !isRatioColumn(c);
-        for (let r = 0; r <= range.e.r; ++r) {
-          const isHeader = r === 0;
-          const displayRow = displayRows[r - 1];
-          const rowStyle = isHeader
-            ? headerStyle
-            : displayRow?.rowType === 'tier'
-              ? tierRowStyle
-              : displayRow?.rowType === 'region'
-                ? regionRowStyle
-                : displayRow?.rowType === 'total'
-                  ? totalRowStyle
-                  : dataRowStyle;
-          for (let C = 0; C <= range.e.c; ++C) {
-            const cellAddress = XLSX.utils.encode_cell({ r, c: C });
-            if (!ws[cellAddress]) continue;
-            ws[cellAddress].s = rowStyle;
-            if (isHeader) continue;
-            if (isRatioColumn(C)) {
-              ws[cellAddress].z = '0.00%';
-            } else if (isNumericColumn(C)) {
-              ws[cellAddress].z = '#,##0';
-            }
-          }
-        }
-      }
+      const sheets: ReportSheetData[] = [
+        {
+          sheetName: '品牌规格占比分析',
+          rows: [
+            headers.map((h) => ({ v: h, s: headerStyle }) as ReportCell),
+            ...dataRows,
+          ],
+        },
+      ];
 
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '品牌规格占比分析');
-      XLSX.writeFile(wb, `品牌规格占比分析_${dateFrom}_${dateTo}.xlsx`);
-      toast.success('导出成功');
+      const fileName = `品牌规格占比分析_${dateFrom}_${dateTo}`;
+      await reportApi.generateReport({
+        type: 'brand-spec',
+        title: fileName,
+        fileName,
+        sheets,
+      });
+      toast.success('报表已生成，请点击右上角下载按钮查看/下载');
     } catch (err: unknown) {
       logger.error('Failed to download brand-spec ratio:', err);
       toast.error('导出失败，请重试');

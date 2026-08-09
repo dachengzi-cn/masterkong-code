@@ -20,6 +20,7 @@ import type {
   BrandSpecStatsResponse,
   BrandSpecMonthlyStatsResponse,
   SalesRepDrilldownResponse,
+  SalesRepUnconvertedDrilldownResponse,
   SystemStatusResponse,
   CheckDuplicatesRequest,
   CheckDuplicatesResponse,
@@ -256,6 +257,22 @@ export async function getSalesRepDrilldown(
     params: { salesRep, region, tier, dateFrom, dateTo },
   });
   return res.data as SalesRepDrilldownResponse;
+}
+
+export async function getSalesRepUnconvertedDrilldown(
+  id: string,
+  salesRep: string,
+  region: string,
+  tier: string,
+  dateTo: string,
+) {
+  const safeId = String(id);
+  const res = await axiosForBackend({
+    url: `/api/datasets/${safeId}/sales-rep-unconverted-drilldown`,
+    method: 'GET',
+    params: { salesRep, region, tier, dateTo },
+  });
+  return res.data as SalesRepUnconvertedDrilldownResponse;
 }
 
 export async function getSystemStatus() {

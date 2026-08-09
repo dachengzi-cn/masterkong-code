@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit/logger';
-import { datasetApi, customerApi } from '@client/src/api/index';
+import { datasetApi, customerApi, reportApi } from '@client/src/api/index';
 import { Button } from '@/components/ui/button';
 import {
   Empty,
@@ -17,6 +17,10 @@ import type {
   AtpPerformanceResponse,
   AtpPerformanceRow,
   FilterOptions,
+  ReportSheetData,
+  ReportRow,
+  ReportCell,
+  ReportCellStyle,
 } from '@shared/api.interface';
 import { ALL_COMPOSITE_FORMATS } from '../DashboardPage/composite-format';
 
@@ -303,77 +307,7 @@ const ServiceAnalysisPage: React.FC = () => {
     if (loading || exporting || !hasAnyData) return;
     setExporting(true);
     try {
-      const XLSX = await import('xlsx-js-style').then(
-        (m) => m.default || m,
-      );
-      const wb = XLSX.utils.book_new();
-
-      const kpiSheet = XLSX.utils.aoa_to_sheet([
-        ['指标', '数值'],
-        ['总服务点数', kpiData?.totalPoints ?? 0],
-        ['付费点数', kpiData?.paidPoints ?? 0],
-        ['付费覆盖率', kpiData?.coverageRate ?? 0],
-        ['点均销额', kpiData?.salesPerPoint ?? 0],
-        ['活跃业代数', kpiData?.activeRepCount ?? 0],
-        ['未成交点数', kpiData?.noDealPoints ?? 0],
-        ['付费金额', kpiData?.paidAmount ?? 0],
-        ['总门店销额', kpiData?.totalStoreSales ?? 0],
-      ]);
-      XLSX.utils.book_append_sheet(wb, kpiSheet, '总览KPI');
-
-      const trendSheet = XLSX.utils.json_to_sheet(
-        trendData.map((item) => ({
-          月份: item.month,
-          总服务点数: item.totalPoints,
-          付费点数: item.paidPoints,
-          付费覆盖率: item.coverageRate,
-          未成交点数: item.noDealPoints,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, trendSheet, '月度趋势');
-
-      const distSheet = XLSX.utils.json_to_sheet(
-        distributionData.map((item) => ({
-          维度值: item.name,
-          总点数: item.totalPoints,
-          付费点数: item.paidPoints,
-          覆盖率: item.coverageRate,
-          总销额: item.totalStoreSales,
-          未成交点数: item.noDealPoints,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, distSheet, '维度分布');
-
-      const rankSheet = XLSX.utils.json_to_sheet(
-        rankingData.map((item) => ({
-          维度值: item.value,
-          总点数: item.totalPoints,
-          付费点数: item.paidPoints,
-          覆盖率: item.coverageRate,
-          点均销额: item.salesPerPoint,
-          未成交点数: item.noDealPoints,
-          占比: item.share,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, rankSheet, '点数排行');
-
-      const detailSheet = XLSX.utils.json_to_sheet(
-        detailData.map((row) => ({
-          所别: row.region,
-          阶层: row.tier,
-          业代: row.salesRep,
-          总点数: row.totalPoints,
-          付费点数: row.paidPoints,
-          覆盖率: row.coverageRate,
-          付费金额: row.paidAmount,
-          总门店销额: row.totalStoreSales,
-          费比: row.feeRatio,
-          未成交点数: row.noDealPoints,
-        })),
-      );
-      XLSX.utils.book_append_sheet(wb, detailSheet, '明细数据');
-
-      const headerStyle: CellStyle = {
+      const headerStyle: ReportCellStyle = {
         fill: { fgColor: { rgb: 'E8EEFC' } },
         font: { bold: true, sz: 10, color: { rgb: '1A2433' } },
         alignment: { horizontal: 'center', vertical: 'center' },
@@ -384,24 +318,102 @@ const ServiceAnalysisPage: React.FC = () => {
           right: { style: 'thin', color: { rgb: 'D0D5DD' } },
         },
       };
+      const withHeader = (rows: ReportRow[]): ReportRow[] => {
+        const header = rows[0] ?? [];
+        return [
+          header.map((v) => ({ v, s: headerStyle }) as ReportCell),
+          ...rows.slice(1),
+        ];
+      };
 
-      [kpiSheet, trendSheet, distSheet, rankSheet, detailSheet].forEach(
-        (sheet) => {
-          const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
-          for (let c = range.s.c; c <= range.e.c; c++) {
-            const cell = sheet[
-              XLSX.utils.encode_cell({ r: 0, c })
-            ] as Record<string, unknown>;
-            if (cell) cell.s = headerStyle;
-          }
-        },
-      );
+      const kpiSheet: ReportSheetData = {
+        sheetName: '总览KPI',
+        rows: [
+          ['指标', '数值'],
+          ['总服务点数', kpiData?.totalPoints ?? 0],
+          ['付费点数', kpiData?.paidPoints ?? 0],
+          ['付费覆盖率', kpiData?.coverageRate ?? 0],
+          ['点均销额', kpiData?.salesPerPoint ?? 0],
+          ['活跃业代数', kpiData?.activeRepCount ?? 0],
+          ['未成交点数', kpiData?.noDealPoints ?? 0],
+          ['付费金额', kpiData?.paidAmount ?? 0],
+          ['总门店销额', kpiData?.totalStoreSales ?? 0],
+        ],
+      };
+      kpiSheet.rows = withHeader(kpiSheet.rows);
 
-      XLSX.writeFile(
-        wb,
-        `服务点数分析报告_${filters.monthFrom ?? ''}_${filters.monthTo ?? ''}.xlsx`,
-      );
-      toast.success('服务点数分析报告导出成功');
+      const trendSheet: ReportSheetData = {
+        sheetName: '月度趋势',
+        rows: withHeader([
+          ['月份', '总服务点数', '付费点数', '付费覆盖率', '未成交点数'],
+          ...trendData.map((item) => [
+            item.month,
+            item.totalPoints,
+            item.paidPoints,
+            item.coverageRate,
+            item.noDealPoints,
+          ]),
+        ]),
+      };
+
+      const distSheet: ReportSheetData = {
+        sheetName: '维度分布',
+        rows: withHeader([
+          ['维度值', '总点数', '付费点数', '覆盖率', '总销额', '未成交点数'],
+          ...distributionData.map((item) => [
+            item.name,
+            item.totalPoints,
+            item.paidPoints,
+            item.coverageRate,
+            item.totalStoreSales,
+            item.noDealPoints,
+          ]),
+        ]),
+      };
+
+      const rankSheet: ReportSheetData = {
+        sheetName: '点数排行',
+        rows: withHeader([
+          ['维度值', '总点数', '付费点数', '覆盖率', '点均销额', '未成交点数', '占比'],
+          ...rankingData.map((item) => [
+            item.value,
+            item.totalPoints,
+            item.paidPoints,
+            item.coverageRate,
+            item.salesPerPoint,
+            item.noDealPoints,
+            item.share,
+          ]),
+        ]),
+      };
+
+      const detailSheet: ReportSheetData = {
+        sheetName: '明细数据',
+        rows: withHeader([
+          ['所别', '阶层', '业代', '总点数', '付费点数', '覆盖率', '付费金额', '总门店销额', '费比', '未成交点数'],
+          ...detailData.map((row) => [
+            row.region,
+            row.tier,
+            row.salesRep,
+            row.totalPoints,
+            row.paidPoints,
+            row.coverageRate,
+            row.paidAmount,
+            row.totalStoreSales,
+            row.feeRatio,
+            row.noDealPoints,
+          ]),
+        ]),
+      };
+
+      const fileName = `服务点数分析报告_${filters.monthFrom ?? ''}_${filters.monthTo ?? ''}`;
+      await reportApi.generateReport({
+        type: 'service-analysis',
+        title: fileName,
+        fileName,
+        sheets: [kpiSheet, trendSheet, distSheet, rankSheet, detailSheet],
+      });
+      toast.success('报表已生成，请点击右上角下载按钮查看/下载');
     } catch (err: unknown) {
       logger.error('Failed to export service analysis:', err);
       toast.error('导出失败，请重试');
