@@ -48,6 +48,7 @@ const NAV_ITEMS = [
   { path: '/customers', label: '客户总览', icon: '👥' },
   { path: '/expense', label: '费用总览', icon: '💰' },
   { path: '/service-analysis', label: '服务点数分析', icon: '📍' },
+  { path: '/capability', label: '能力评估', icon: '🎯' },
 ];
 
 const DASHBOARD_SUB_ITEMS = [
@@ -100,6 +101,16 @@ const LayoutContent = () => {
       return next;
     });
   }, [activeSheetId]);
+
+  const closeOtherSheets = useCallback((id: string) => {
+    setSheets((prev) => prev.filter((sheet) => sheet.id === id));
+    setActiveSheetId(id);
+  }, []);
+
+  const closeAllSheets = useCallback(() => {
+    setSheets([]);
+    setActiveSheetId(null);
+  }, []);
 
   const activateSheet = useCallback((id: string) => {
     setActiveSheetId(id);
@@ -160,9 +171,11 @@ const LayoutContent = () => {
       ...EXPENSE_SUB_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
       ...FOOTER_NAV_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
     ];
-    const matched = allSheetPaths.find((item) =>
-      item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)
-    );
+    const matched = [...allSheetPaths]
+      .sort((a, b) => b.path.length - a.path.length)
+      .find((item) =>
+        item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)
+      );
     if (matched && sheets.length === 0) {
       openSheet(matched.path, matched.label, matched.icon);
     }
@@ -453,6 +466,8 @@ const LayoutContent = () => {
             duplicateSheetIds={duplicateSheetIds}
             onActivateSheet={activateSheet}
             onCloseSheet={closeSheet}
+            onCloseOtherSheets={closeOtherSheets}
+            onCloseAllSheets={closeAllSheets}
             onReorderSheets={handleReorderSheets}
           />
         ) : (

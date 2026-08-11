@@ -278,6 +278,14 @@ export interface BrandSpecStatsRow {
   servicePoints: number;
   totalOrders: number;
   storeCount: number;
+  /** 近三月（不含当月）每月该品牌/规格匹配箱数，按月升序排列 */
+  monthlyBoxes?: number[];
+  /** 近三月（不含当月）每月该业代总箱数（不含品牌/规格过滤），按月升序排列 */
+  monthlyTotalBoxes?: number[];
+  /** 筛选时间段内成交≥2次的门店数 */
+  repeatDealStores?: number;
+  /** 筛选时间段内成交门店总数 */
+  dealStores?: number;
   rowType?: HeatmapRowType;
 }
 
@@ -1005,6 +1013,8 @@ export interface ReportCell {
   v: string | number | boolean | null | undefined;
   s?: ReportCellStyle;
   z?: string;
+  /** xlsx 单元格类型：'n' 数值（配合 z 数字格式生效）、's' 字符串、'b' 布尔等 */
+  t?: 'n' | 's' | 'b' | 'd' | 'e';
 }
 
 /** 一行数据：原始值或带样式的单元格对象（xlsx AOA 兼容） */
@@ -1058,6 +1068,170 @@ export interface GetReportsParams {
 export interface GetReportsResponse {
   items: ReportRecord[];
   total: number;
+}
+
+// ===== 业务综合能力评估（战力雷达图）=====
+
+/** 评估对象层级：所别（营业所）/ 业代（人员） */
+export type CapabilityLevel = 'region' | 'rep';
+
+/** 对比类型：无 / 环比 / 同比 */
+export type CapabilityCompareType = 'none' | 'mom' | 'yoy';
+
+/** 维度方向：正向（越高越好）/ 反向（越低越好） */
+export type CapabilityDimensionDirection = 'up' | 'down';
+
+/** 维度能力等级：优势（绿）/ 中等（黄）/ 短板（红） */
+export type CapabilityScoreLevel = 'strength' | 'medium' | 'weak';
+
+/** 维度元信息（注册表 → 前端展示，后续新增指标在此扩展） */
+export interface CapabilityDimensionMeta {
+  key: string;
+  name: string;
+  description: string;
+  /** 数据来源说明（客户资料/费用资料/成交数据集） */
+  dataSource: string;
+  /** 计算方法说明 */
+  calcMethod: string;
+  /** 标准化方法说明 */
+  standardization: string;
+  /** 原始值单位（如 元/%、无单位留空） */
+  unit?: string;
+  /** 方向 */
+  direction: CapabilityDimensionDirection;
+  /** 当前是否启用 */
+  enabled: boolean;
+  /** 当前生效权重（0~1，配置表为准，缺省回退注册表默认） */
+  weight: number;
+  /** 优势阈值（默认 75） */
+  thresholdHigh: number;
+  /** 短板阈值（默认 60） */
+  thresholdLow: number;
+  sortOrder: number;
+  /** 短板时的改进建议文案 */
+  suggestionText: string;
+}
+
+/** 维度得分明细（雷达图 + 表格 + 导出共用） */
+export interface CapabilityDimensionScore {
+  key: string;
+  name: string;
+  /** 0~100 标准分 */
+  score: number;
+  level: CapabilityScoreLevel;
+  /** 原始指标值（未标准化） */
+  rawValue: number | null;
+  /** 原始值展示文案（含单位） */
+  rawLabel?: string;
+  weight: number;
+  /** 对比期得分差（compareType 非 none 时存在） */
+  compare?: {
+    mom?: number | null;
+    yoy?: number | null;
+  };
+}
+
+/** 总分战力等级 */
+export interface CapabilityTotalLevel {
+  code: 'S' | 'A' | 'B' | 'C';
+  label: string;
+  /** 展示用颜色（十六进制） */
+  color: string;
+  minScore: number;
+}
+
+/** 评估结果（score 接口返回） */
+export interface CapabilityScoreResult {
+  level: CapabilityLevel;
+  region: string;
+  salesRep?: string;
+  monthFrom: string;
+  monthTo: string;
+  compareType: CapabilityCompareType;
+  scores: CapabilityDimensionScore[];
+  totalScore: number;
+  totalLevel: CapabilityTotalLevel;
+  rawValues: Record<string, number | null>;
+  /** 对比期结果（mom/yoy），none 时为 null */
+  compare: {
+    type: 'mom' | 'yoy';
+    /** 对比期标签，如 "2026-06" */
+    label: string;
+    totalScore: number | null;
+    scores: Array<{ key: string; score: number | null; rawValue: number | null }>;
+  } | null;
+}
+
+/** 优势/短板单项识别 */
+export interface CapabilityStrengthWeakness {
+  key: string;
+  name: string;
+  score: number;
+  level: CapabilityScoreLevel;
+  /** 识别理由（基于原始值/排名） */
+  reason: string;
+  /** 改进建议（短板时提供） */
+  suggestion?: string;
+}
+
+/** 解读与建议（insights 接口返回） */
+export interface CapabilityInsightsResult {
+  /** 评估结论一句话 */
+  summary: string;
+  /** 总分趋势（相对对比期，无对比期时按最弱维度趋势 flat） */
+  trend: 'up' | 'down' | 'flat';
+  strengths: CapabilityStrengthWeakness[];
+  weaknesses: CapabilityStrengthWeakness[];
+  suggestions: string[];
+}
+
+/** 下拉选项（options 接口返回） */
+export interface CapabilityOptions {
+  /** 可选所别 */
+  regions: string[];
+  /** 所别 → 业代列表 */
+  salesReps: Record<string, string[]>;
+  /** 有数据的月份（YYYY-MM，含近 13 个月） */
+  months: string[];
+}
+
+/** 维度配置更新请求（PUT dimensions） */
+export interface CapabilityDimensionUpdateRequest {
+  dimensions: Array<{
+    key: string;
+    weight?: number;
+    enabled?: boolean;
+    thresholdHigh?: number;
+    thresholdLow?: number;
+  }>;
+}
+
+/** 维度配置更新响应 */
+export interface CapabilityDimensionUpdateResponse {
+  success: boolean;
+  dimensions: CapabilityDimensionMeta[];
+}
+
+/** 评分/解读/导出通用参数 */
+export interface CapabilityScoreParams {
+  level?: CapabilityLevel;
+  region?: string;
+  salesRep?: string;
+  monthFrom?: string;
+  monthTo?: string;
+  compareType?: CapabilityCompareType;
+}
+
+/** 解读参数（与评分一致） */
+export type CapabilityInsightsParams = CapabilityScoreParams;
+
+/** 导出参数（与评分一致） */
+export type CapabilityExportParams = CapabilityScoreParams;
+
+/** 导出文件内容说明（导出为 xlsx 附件，非接口响应体） */
+export interface CapabilityExportResult {
+  fileName: string;
+  sheetNames: string[];
 }
 
 

@@ -258,6 +258,9 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
       <KpiCard
         label="临期费用总额"
         icon="👛"
+        hoverEffect
+        glowColor="hsl(217,85%,52%)"
+        lineColor="bg-[hsl(217,85%,52%)]"
         loading={loading || !data}
         value={
           data ? (
@@ -287,18 +290,23 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
       />
 
       {/* 执行门店数 + 各所门店数 */}
-      <div className="bg-card border border-border rounded-sm p-4 relative overflow-hidden md:col-span-2">
-        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[hsl(217,85%,52%)]" />
+      <div
+        className="bg-card border border-border rounded-sm p-4 relative overflow-hidden md:col-span-2 kpi-hover-effect"
+        style={{ '--kpi-glow': 'hsl(152,60%,42%)' } as React.CSSProperties}
+      >
+        <div className="kpi-hover-border-glow" aria-hidden="true" />
+        <div className="kpi-hover-glow" aria-hidden="true" />
+        <div className="absolute left-0 top-0 bottom-0 w-0.5 kpi-hover-line bg-[hsl(152,60%,42%)]" />
         {loading || !data ? (
           <Skeleton className="h-[80px] w-full" />
         ) : (
           <div className="flex items-start gap-3">
             <div className="flex-1 min-w-0">
-              <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+              <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1 kpi-hover-title">
                 <span className="inline-flex items-center justify-center text-base leading-none">🏬</span>
                 执行门店数
               </div>
-              <div className="text-xl font-medium font-['Roboto_Mono',monospace] tabular-nums truncate">
+              <div className="text-xl font-medium font-['Roboto_Mono',monospace] tabular-nums truncate kpi-hover-value">
                 <CountUp
                   end={data.involvedStoreCount}
                   duration={0.6}
@@ -307,7 +315,7 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
                 />
               </div>
             </div>
-            <div className="flex-[2] min-w-0 border-l border-border pl-3">
+            <div className="flex-[2] min-w-0 border-l border-border pl-3 kpi-hover-sub">
               <OfficeStoreMomList items={data.officeStoreMom} />
             </div>
           </div>
@@ -315,18 +323,23 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
       </div>
 
       {/* 费用环比变化 + 各所金额环比 */}
-      <div className="bg-card border border-border rounded-sm p-4 relative overflow-hidden md:col-span-2">
-        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[hsl(217,85%,52%)]" />
+      <div
+        className="bg-card border border-border rounded-sm p-4 relative overflow-hidden md:col-span-2 kpi-hover-effect"
+        style={{ '--kpi-glow': 'hsl(38,85%,48%)' } as React.CSSProperties}
+      >
+        <div className="kpi-hover-border-glow" aria-hidden="true" />
+        <div className="kpi-hover-glow" aria-hidden="true" />
+        <div className="absolute left-0 top-0 bottom-0 w-0.5 kpi-hover-line bg-[hsl(38,85%,48%)]" />
         {loading || !data ? (
           <Skeleton className="h-[80px] w-full" />
         ) : (
           <div className="flex items-start gap-3">
             <div className="flex-1 min-w-0">
-              <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+              <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1 kpi-hover-title">
                 <span className="inline-flex items-center justify-center text-base leading-none">↔️</span>
                 费用环比变化
               </div>
-              <div className="text-xl font-medium font-['Roboto_Mono',monospace] tabular-nums truncate">
+              <div className="text-xl font-medium font-['Roboto_Mono',monospace] tabular-nums truncate kpi-hover-value">
                 <CountUp
                   end={data.monthOverMonthChange}
                   duration={0.6}
@@ -339,7 +352,7 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
                 <ChangeIndicator value={data.monthOverMonthChange} />
               </div>
             </div>
-            <div className="flex-[2] min-w-0 border-l border-border pl-3">
+            <div className="flex-[2] min-w-0 border-l border-border pl-3 kpi-hover-sub">
               <OfficeAmountMomList items={data.officeAmountMom} />
             </div>
           </div>
@@ -348,9 +361,10 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
 
       {/* &gt;500元门店数 */}
       <div
-        className={`bg-card border rounded-sm p-4 relative overflow-hidden cursor-pointer transition-colors ${
+        className={`bg-card border rounded-sm p-4 relative overflow-hidden cursor-pointer transition-colors kpi-hover-effect ${
           activeDrilldown === 'store' ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'
         }`}
+        style={{ '--kpi-glow': 'hsl(262,80%,58%)' } as React.CSSProperties}
         onClick={() => onDrillDown?.('store')}
         role="button"
         tabIndex={0}
@@ -361,8 +375,10 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
           }
         }}
       >
-        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[hsl(217,85%,52%)]" />
-        <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+        <div className="kpi-hover-border-glow" aria-hidden="true" />
+        <div className="kpi-hover-glow" aria-hidden="true" />
+        <div className="absolute left-0 top-0 bottom-0 w-0.5 kpi-hover-line bg-[hsl(262,80%,58%)]" />
+        <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1 kpi-hover-title">
           <span className="inline-flex items-center justify-center text-base leading-none">🏬</span>
           <span className="shrink-0">≥</span>
           <input
@@ -386,15 +402,18 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
         {loading || !data ? (
           <Skeleton className="h-[80px] w-full" />
         ) : (
-          <StoreOver500Card items={data.storeOver500ByOffice} />
+          <div className="kpi-hover-sub">
+            <StoreOver500Card items={data.storeOver500ByOffice} />
+          </div>
         )}
       </div>
 
       {/* 规格TOP5 */}
       <div
-        className={`bg-card border rounded-sm p-4 relative overflow-hidden cursor-pointer transition-colors ${
+        className={`bg-card border rounded-sm p-4 relative overflow-hidden cursor-pointer transition-colors kpi-hover-effect ${
           activeDrilldown === 'spec' ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'
         }`}
+        style={{ '--kpi-glow': 'hsl(174,72%,38%)' } as React.CSSProperties}
         onClick={() => onDrillDown?.('spec')}
         role="button"
         tabIndex={0}
@@ -405,8 +424,10 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
           }
         }}
       >
-        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[hsl(217,85%,52%)]" />
-        <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+        <div className="kpi-hover-border-glow" aria-hidden="true" />
+        <div className="kpi-hover-glow" aria-hidden="true" />
+        <div className="absolute left-0 top-0 bottom-0 w-0.5 kpi-hover-line bg-[hsl(174,72%,38%)]" />
+        <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1 kpi-hover-title">
           <span className="inline-flex items-center justify-center text-base leading-none">📦</span>
           规格TOP5
           <span className="ml-auto text-[10px] text-primary">点击下钻</span>
@@ -414,7 +435,9 @@ const ExpiryKpiCards: React.FC<ExpiryKpiCardsProps> = ({
         {loading || !data ? (
           <Skeleton className="h-[80px] w-full" />
         ) : (
-          <TopSpecificationCard items={data.topSpecifications} />
+          <div className="kpi-hover-sub">
+            <TopSpecificationCard items={data.topSpecifications} />
+          </div>
         )}
       </div>
     </div>

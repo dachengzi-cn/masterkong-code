@@ -38,7 +38,6 @@ import {
 } from './expense-overview.types';
 import {
   monthRangeToDates,
-  enumerateMonths,
   buildDistributionData,
   buildRankingData,
   buildDetailRows,
@@ -202,9 +201,11 @@ const ExpensePage: React.FC = () => {
       }
 
       // 月度趋势非阻塞异步加载：不阻塞主体渲染
+      // 与临期趋势一致：趋势图展示全部可用月份，不受月份筛选影响
       const months =
-        confirmedFilters.monthFrom && confirmedFilters.monthTo
-          ? enumerateMonths(confirmedFilters.monthFrom, confirmedFilters.monthTo)
+        expiryResult.availableFilters?.months &&
+        expiryResult.availableFilters.months.length > 0
+          ? expiryResult.availableFilters.months
           : [];
       if (months.length > 0 && months.length <= 12) {
         setAtpMonthlyTrend([]); // 先清空，避免显示旧数据

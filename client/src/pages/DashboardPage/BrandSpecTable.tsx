@@ -33,9 +33,10 @@ interface AddedColumn {
   type: 'brand' | 'specification';
   values: string[];
   data: Record<string, number>;
-  storeCountData: Record<string, number>;
-  threeMonthData: Record<string, number>;
-  threeMonthStoreCountData: Record<string, number>;
+  /** 近三月均占比（按每月占比取平均） */
+  threeMonthAvgShareData: Record<string, number>;
+  /** 筛选时间段内2次成交门店占比 */
+  repeatDealStoreShareData: Record<string, number>;
   loading: boolean;
 }
 
@@ -154,6 +155,14 @@ function aggregateStatsRows(
   const servicePoints = rows.reduce((sum, r) => sum + (r.servicePoints ?? 0), 0);
   const totalOrders = rows.reduce((sum, r) => sum + (r.totalOrders ?? 0), 0);
   const storeCount = rows.reduce((sum, r) => sum + (r.storeCount ?? 0), 0);
+  // 逐月累加匹配箱数与总箱数
+  const monthCount = rows[0]?.monthlyBoxes?.length ?? 0;
+  const monthlyBoxes: number[] = [];
+  const monthlyTotalBoxes: number[] = [];
+  for (let i = 0; i < monthCount; i++) {
+    monthlyBoxes.push(rows.reduce((sum, r) => sum + (r.monthlyBoxes?.[i] ?? 0), 0));
+    monthlyTotalBoxes.push(rows.reduce((sum, r) => sum + (r.monthlyTotalBoxes?.[i] ?? 0), 0));
+  }
   return {
     salesRep,
     region,
@@ -161,6 +170,10 @@ function aggregateStatsRows(
     servicePoints,
     totalOrders,
     storeCount,
+    monthlyBoxes,
+    monthlyTotalBoxes,
+    repeatDealStores: rows.reduce((sum, r) => sum + (r.repeatDealStores ?? 0), 0),
+    dealStores: rows.reduce((sum, r) => sum + (r.dealStores ?? 0), 0),
     rowType,
   };
 }
@@ -266,6 +279,31 @@ function formatPercentage(boxCount: number, total: number): string {
   return `${((boxCount / total) * 100).toFixed(2)}%`;
 }
 
+/** 近三个月均占比：每月占比（匹配箱数/总箱数）的平均值 */
+function calcThreeMonthAvgShare(row: BrandSpecStatsRow): number | null {
+  const boxes = row.monthlyBoxes ?? [];
+  const totals = row.monthlyTotalBoxes ?? [];
+  if (boxes.length === 0 || totals.length === 0) return null;
+  const shares: number[] = [];
+  for (let i = 0; i < boxes.length; i++) {
+    if (totals[i] > 0) shares.push(boxes[i] / totals[i]);
+  }
+  if (shares.length === 0) return null;
+  return shares.reduce((sum, s) => sum + s, 0) / shares.length;
+}
+
+/** 筛选时间段内2次成交门店占比 */
+function calcRepeatDealStoreShare(row: BrandSpecStatsRow): number | null {
+  const dealStores = row.dealStores ?? 0;
+  if (dealStores <= 0) return null;
+  return (row.repeatDealStores ?? 0) / dealStores;
+}
+
+function formatShare(share: number | null): string {
+  if (share === null) return '-';
+  return `${(share * 100).toFixed(2)}%`;
+}
+
 function getColumnLabel(values: string[]): string {
   if (values.length === 0) return '未选择';
   if (values.length === 1) return values[0];
@@ -313,9 +351,8 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
       type: 'brand',
       values: [],
       data: {},
-      storeCountData: {},
-      threeMonthData: {},
-      threeMonthStoreCountData: {},
+      threeMonthAvgShareData: {},
+      repeatDealStoreShareData: {},
       loading: false,
     },
     {
@@ -323,9 +360,8 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
       type: 'brand',
       values: [],
       data: {},
-      storeCountData: {},
-      threeMonthData: {},
-      threeMonthStoreCountData: {},
+      threeMonthAvgShareData: {},
+      repeatDealStoreShareData: {},
       loading: false,
     },
     {
@@ -333,9 +369,8 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
       type: 'specification',
       values: [],
       data: {},
-      storeCountData: {},
-      threeMonthData: {},
-      threeMonthStoreCountData: {},
+      threeMonthAvgShareData: {},
+      repeatDealStoreShareData: {},
       loading: false,
     },
   ]);
@@ -407,8 +442,8 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
         const label = getColumnLabel(col.values);
         headers.push(`${label} 箱数`);
         headers.push(`${label} 占比%`);
-        headers.push(`${label} 近期三个月月合计箱数`);
-        headers.push(`${label} 近期三个月成交门店数`);
+        headers.push(`${label} 近三个月均占比`);
+        headers.push(`${label} 筛选时间段内2次成交门店占比`);
       }
 
       const dataRows: ReportRow[] = displayRows.map((row) => {
@@ -433,8 +468,8 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
           const total = mainTotalMap[key] ?? 0;
           rowData.push({ v: boxCount, s: rowStyle, z: '#,##0' });
           rowData.push({ v: total > 0 ? boxCount / total : 0, s: rowStyle, z: '0.00%' });
-          rowData.push({ v: col.threeMonthData[key] ?? 0, s: rowStyle, z: '#,##0' });
-          rowData.push({ v: col.threeMonthStoreCountData[key] ?? 0, s: rowStyle, z: '#,##0' });
+          rowData.push({ v: col.threeMonthAvgShareData[key] ?? 0, s: rowStyle, z: '0.00%' });
+          rowData.push({ v: col.repeatDealStoreShareData[key] ?? 0, s: rowStyle, z: '0.00%' });
         }
         return rowData;
       });
@@ -475,9 +510,8 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
       type,
       values: [],
       data: {},
-      storeCountData: {},
-      threeMonthData: {},
-      threeMonthStoreCountData: {},
+      threeMonthAvgShareData: {},
+      repeatDealStoreShareData: {},
       loading: false,
     };
     setAddedColumns((prev) => [...prev, newColumn]);
@@ -548,7 +582,9 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
             datasetId,
             threeMonthFrom,
             threeMonthTo,
-            fetchFilters
+            fetchFilters,
+            dateFrom,
+            dateTo
           ),
         ]);
 
@@ -562,8 +598,8 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
           logger.error('Failed to load heatmap data for brand/spec column:', heatmapResult.reason);
         }
 
-        const threeMonthData: Record<string, number> = {};
-        const threeMonthStoreCountData: Record<string, number> = {};
+        const threeMonthAvgShareData: Record<string, number> = {};
+        const repeatDealStoreShareData: Record<string, number> = {};
         if (statsResult.status === 'fulfilled') {
           if (statsResult.value.rows.length === 0) {
             logger.warn(`BrandSpecStats returned empty rows for column ${columnId} (dateRange: ${threeMonthFrom} ~ ${threeMonthTo})`);
@@ -571,8 +607,10 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
           const threeMonthSubtotalRows = buildStatsRowsWithTotals(statsResult.value.rows);
           for (const row of threeMonthSubtotalRows) {
             const key = getRowKey(row);
-            threeMonthData[key] = row.totalOrders ?? 0;
-            threeMonthStoreCountData[key] = row.storeCount ?? 0;
+            const avgShare = calcThreeMonthAvgShare(row);
+            if (avgShare !== null) threeMonthAvgShareData[key] = avgShare;
+            const repeatShare = calcRepeatDealStoreShare(row);
+            if (repeatShare !== null) repeatDealStoreShareData[key] = repeatShare;
           }
         } else {
           logger.error('Failed to load brand-spec-stats data:', statsResult.reason);
@@ -582,7 +620,13 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
         setAddedColumns((prev) =>
           prev.map((col) =>
             col.id === columnId
-              ? { ...col, data, threeMonthData, threeMonthStoreCountData, loading: false }
+              ? {
+                  ...col,
+                  data,
+                  threeMonthAvgShareData,
+                  repeatDealStoreShareData,
+                  loading: false,
+                }
               : col
           )
         );
@@ -601,7 +645,9 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
   const handleColumnValuesChange = (columnId: string, values: string[]) => {
     setAddedColumns((prev) =>
       prev.map((col) =>
-        col.id === columnId ? { ...col, values, data: {}, loading: false } : col
+        col.id === columnId
+          ? { ...col, values, data: {}, threeMonthAvgShareData: {}, repeatDealStoreShareData: {}, loading: false }
+          : col
       )
     );
   };
@@ -720,12 +766,12 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
                     </th>
                     <th className="px-2 py-2 text-center !font-bold text-muted-foreground whitespace-nowrap min-w-[100px]">
                       <div className="whitespace-normal leading-tight">
-                        {getColumnLabel(col.values)} 近三月月合计箱数
+                        {getColumnLabel(col.values)} 近三个月均占比
                       </div>
                     </th>
                     <th className="px-2 py-2 text-center !font-bold text-muted-foreground whitespace-nowrap min-w-[100px]">
                       <div className="whitespace-normal leading-tight">
-                        {getColumnLabel(col.values)} 近三月成交门店数
+                        {getColumnLabel(col.values)} 筛选时间段内2次成交门店占比
                       </div>
                     </th>
                   </React.Fragment>
@@ -744,7 +790,7 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
               return (
                 <React.Fragment key={`${row.region}-${row.tier}-${row.salesRep}-${index}`}>
                   <tr
-                    className={`border-b border-border/60 transition-colors duration-150 ease-out ${getRowBg(row.rowType)} ${getRowText(row.rowType)} ${!isTotalRow ? 'hover:bg-accent/10' : ''}`}
+                    className={`${isExpanded ? '' : 'border-b border-border/60'} transition-colors duration-150 ease-out ${getRowBg(row.rowType)} ${getRowText(row.rowType)} ${!isTotalRow ? 'hover:bg-accent/10' : ''}`}
                   >
                     <td className="px-4 py-2 whitespace-nowrap">
                       {getRegionCell(row)}
@@ -795,20 +841,20 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
                               '-'
                             )}
                           </td>
-                          <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap">
+                          <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap text-muted-foreground">
                             {col.loading ? (
                               <Skeleton className="h-4 w-12 mx-auto" />
                             ) : col.values.length > 0 ? (
-                              formatNumber(col.threeMonthData[key] ?? 0)
+                              formatShare(col.threeMonthAvgShareData[key] ?? null)
                             ) : (
                               '-'
                             )}
                           </td>
-                          <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap">
+                          <td className="px-2 py-2 text-center font-mono tabular-nums whitespace-nowrap text-muted-foreground">
                             {col.loading ? (
                               <Skeleton className="h-4 w-12 mx-auto" />
                             ) : col.values.length > 0 ? (
-                              formatNumber(col.threeMonthStoreCountData[key] ?? 0)
+                              formatShare(col.repeatDealStoreShareData[key] ?? null)
                             ) : (
                               '-'
                             )}
@@ -818,7 +864,7 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
                     })}
                   </tr>
                   {isExpanded && (
-                    <tr className="bg-accent/5">
+                    <tr className="bg-accent/5 border-b border-border/60">
                       <td colSpan={totalCols} className="px-4 py-3">
                         {drilldownLoading ? (
                           <div className="flex items-center justify-center py-4">
@@ -829,8 +875,8 @@ const BrandSpecTable = React.forwardRef<BrandSpecTableRef, BrandSpecTableProps>(
                             该业代在近6个月内无符合条件的交易记录
                           </div>
                         ) : (
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-xs border border-border rounded-sm">
+                          <div className="overflow-x-auto rounded-sm border border-border">
+                            <table className="w-full text-xs">
                               <thead>
                                 <tr className="bg-accent/40 border-b border-border">
                                   <th className="px-3 py-2 text-left !font-bold text-muted-foreground whitespace-nowrap sticky left-0 bg-accent/40">

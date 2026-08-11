@@ -46,6 +46,7 @@ import type {
   AtpPerformanceStoreRow,
   AtpAvailableMonthsResponse,
   AtpThresholdParams,
+  ExpenseRecord,
 } from '@shared/api.interface';
 
 interface MemoryDataset {
@@ -2278,9 +2279,11 @@ export class DatasetService implements OnModuleInit {
     dateFrom: string,
     dateTo: string,
     filters?: HeatmapFilterParams,
+    dealDateFrom?: string,
+    dealDateTo?: string,
   ): Promise<BrandSpecStatsResponse> {
     if (this.useMemoryStorage) {
-      return this.getBrandSpecStatsMemory(datasetId, dateFrom, dateTo, filters);
+      return this.getBrandSpecStatsMemory(datasetId, dateFrom, dateTo, filters, dealDateFrom, dealDateTo);
     }
     try {
       const profileWhere = this.buildProfileWhereClause(filters);
@@ -2306,21 +2309,19 @@ export class DatasetService implements OnModuleInit {
       const safeSalesRepField = salesRepField ? salesRepField.replace(/'/g, "''") : '';
       const safeRegionField = regionField ? regionField.replace(/'/g, "''") : '';
 
+      // 近三月与筛选时间段取并集，一次查询后在内存中按区间归类
+      const dealFrom = dealDateFrom || dateFrom;
+      const dealTo = dealDateTo || dateTo;
+      const rangeFrom = dealFrom < dateFrom ? dealFrom : dateFrom;
+      const rangeTo = dealTo > dateTo ? dealTo : dateTo;
+
       const transConditions: string[] = [
         `dataset_id = '${datasetId.replace(/'/g, "''")}'`,
         `content->>'${safeDateField}' IS NOT NULL`,
         `content->>'${safeDateField}' != ''`,
-        `REPLACE(REPLACE(content->>'${safeDateField}', '.', '-'), '/', '-') >= '${dateFrom}'`,
-        `REPLACE(REPLACE(content->>'${safeDateField}', '.', '-'), '/', '-') <= '${dateTo}'`,
+        `REPLACE(REPLACE(content->>'${safeDateField}', '.', '-'), '/', '-') >= '${rangeFrom}'`,
+        `REPLACE(REPLACE(content->>'${safeDateField}', '.', '-'), '/', '-') <= '${rangeTo}'`,
       ];
-      if (filters?.brand && filters.brand.length > 0) {
-        const vals = filters.brand.map((v: string) => "'" + v.replace(/'/g, "''") + "'").join(',');
-        transConditions.push(`content->>'品牌' IN (${vals})`);
-      }
-      if (filters?.specification && filters.specification.length > 0) {
-        const vals = filters.specification.map((v: string) => "'" + v.replace(/'/g, "''") + "'").join(',');
-        transConditions.push(`content->>'产品-规格' IN (${vals})`);
-      }
       if (filters?.sheetType && filters.sheetType.length > 0) {
         const vals = filters.sheetType.map((v: string) => "'" + v.replace(/'/g, "''") + "'").join(',');
         transConditions.push(`content->>'_sheetType' IN (${vals})`);
@@ -2334,18 +2335,48 @@ export class DatasetService implements OnModuleInit {
         (safeBoxCountField ? ` (content->>'${safeBoxCountField}')::numeric as box_count,` : " 0 as box_count,") +
         (safeSalesRepField ? ` content->>'${safeSalesRepField}' as trans_sales_rep,` : " '' as trans_sales_rep,") +
         (safeRegionField ? ` content->>'${safeRegionField}' as trans_region,` : " '' as trans_region,") +
-        " content->>'_sheetType' as sheet_type" +
+        " content->>'_sheetType' as sheet_type," +
+        " content->>'品牌' as brand," +
+        " content->>'产品-规格' as specification" +
         ' FROM data_record WHERE ' + transConditions.join(' AND ') +
         ' AND content_hash IS NOT NULL' +
         ' ORDER BY content_hash, _created_at' +
-        ') SELECT customer_code, box_count, trans_sales_rep, trans_region, sheet_type' +
+        ') SELECT customer_code, trans_date, box_count, trans_sales_rep, trans_region, sheet_type, brand, specification' +
         ' FROM deduped';
       const transResult = await this.db.execute(sql.raw(dedupedTransQuery));
       this.logger.log(`BrandSpecStats 交易数据: dataset=${datasetId}, 查询到 ${transResult.length} 条去重记录`);
 
-      type TransRow = { customer_code: string; box_count?: string | number | null; trans_sales_rep?: string; trans_region?: string; sheet_type?: string };
+      type TransRow = {
+        customer_code: string;
+        trans_date?: string;
+        box_count?: string | number | null;
+        trans_sales_rep?: string;
+        trans_region?: string;
+        sheet_type?: string;
+        brand?: string;
+        specification?: string;
+      };
       const compositeKey = (salesRep: string, region: string, tier: string) => salesRep + '|||' + region + '|||' + tier;
-      const groupStats = new Map<string, { salesRep: string; region: string; tier: string; totalOrders: number; stores: Set<string> }>();
+      type GroupStat = {
+        salesRep: string;
+        region: string;
+        tier: string;
+        totalOrders: number;
+        stores: Set<string>;
+        monthlyBoxes: Map<string, number>;
+        monthlyTotalBoxes: Map<string, number>;
+        dealStoreCounts: Map<string, number>;
+      };
+      const groupStats = new Map<string, GroupStat>();
+
+      // 品牌/规格匹配（近三月占比与成交门店统计均按该列所选值过滤）
+      const brandVals = filters?.brand ?? [];
+      const specVals = filters?.specification ?? [];
+      const matchesBrandSpec = (brand?: string, spec?: string): boolean => {
+        if (brandVals.length > 0 && !brandVals.includes(brand ?? '')) return false;
+        if (specVals.length > 0 && !specVals.includes(spec ?? '')) return false;
+        return true;
+      };
 
       for (const trans of transResult as unknown as TransRow[]) {
         let salesRep = trans.trans_sales_rep ?? '';
@@ -2365,24 +2396,60 @@ export class DatasetService implements OnModuleInit {
         }
 
         const key = compositeKey(salesRep, region, tier);
-        const stats = groupStats.get(key);
+        let stats = groupStats.get(key);
+        if (!stats) {
+          stats = {
+            salesRep, region, tier,
+            totalOrders: 0,
+            stores: new Set(),
+            monthlyBoxes: new Map(),
+            monthlyTotalBoxes: new Map(),
+            dealStoreCounts: new Map(),
+          };
+          groupStats.set(key, stats);
+        }
+
         const boxValue = parseFloat(String(trans.box_count ?? '0')) || 0;
-        if (stats) {
-          stats.totalOrders += boxValue;
-          stats.stores.add(trans.customer_code);
-        } else {
-          groupStats.set(key, {
-            salesRep,
-            region,
-            tier,
-            totalOrders: boxValue,
-            stores: new Set([trans.customer_code]),
-          });
+        const normDate = String(trans.trans_date ?? '').replace(/[./]/g, '-');
+        const monthKey = normDate.slice(0, 7);
+        const matched = matchesBrandSpec(trans.brand, trans.specification);
+
+        // 近三月区间：统计每月总箱数与匹配箱数
+        if (normDate >= dateFrom && normDate <= dateTo) {
+          stats.monthlyTotalBoxes.set(monthKey, (stats.monthlyTotalBoxes.get(monthKey) ?? 0) + boxValue);
+          if (matched) {
+            stats.totalOrders += boxValue;
+            stats.stores.add(trans.customer_code);
+            stats.monthlyBoxes.set(monthKey, (stats.monthlyBoxes.get(monthKey) ?? 0) + boxValue);
+          }
+        }
+        // 筛选时间段：统计匹配门店的成交次数
+        if (matched && normDate >= dealFrom && normDate <= dealTo) {
+          stats.dealStoreCounts.set(trans.customer_code, (stats.dealStoreCounts.get(trans.customer_code) ?? 0) + 1);
+        }
+      }
+
+      // 近三月月份列表（dateFrom 所在月 ~ dateTo 所在月）
+      const months: string[] = [];
+      {
+        const [fy, fm] = dateFrom.slice(0, 7).split('-').map(Number);
+        const [ty, tm] = dateTo.slice(0, 7).split('-').map(Number);
+        let y = fy; let m = fm;
+        while (y < ty || (y === ty && m <= tm)) {
+          months.push(`${y}-${String(m).padStart(2, '0')}`);
+          m += 1;
+          if (m > 12) { m = 1; y += 1; }
         }
       }
 
       const rows: BrandSpecStatsRow[] = [];
       for (const stats of groupStats.values()) {
+        const monthlyBoxes = months.map((mk) => Math.round(stats.monthlyBoxes.get(mk) ?? 0));
+        const monthlyTotalBoxes = months.map((mk) => Math.round(stats.monthlyTotalBoxes.get(mk) ?? 0));
+        let repeatDealStores = 0;
+        for (const cnt of stats.dealStoreCounts.values()) {
+          if (cnt >= 2) repeatDealStores += 1;
+        }
         rows.push({
           salesRep: stats.salesRep,
           region: stats.region,
@@ -2390,6 +2457,10 @@ export class DatasetService implements OnModuleInit {
           servicePoints: 0,
           totalOrders: Math.round(stats.totalOrders),
           storeCount: stats.stores.size,
+          monthlyBoxes,
+          monthlyTotalBoxes,
+          repeatDealStores,
+          dealStores: stats.dealStoreCounts.size,
         });
       }
       return { rows };
@@ -2405,6 +2476,8 @@ export class DatasetService implements OnModuleInit {
     dateFrom: string,
     dateTo: string,
     filters?: HeatmapFilterParams,
+    dealDateFrom?: string,
+    dealDateTo?: string,
   ): Promise<BrandSpecStatsResponse> {
     try {
       // 1) 从内存客户资料构建业代分组
@@ -2500,7 +2573,31 @@ export class DatasetService implements OnModuleInit {
 
       const seenHashes = new Set<string>();
       const compositeKey = (salesRep: string, region: string, tier: string) => salesRep + '|||' + region + '|||' + tier;
-      const groupStats = new Map<string, { salesRep: string; region: string; tier: string; totalOrders: number; stores: Set<string> }>();
+      type GroupStat = {
+        salesRep: string;
+        region: string;
+        tier: string;
+        totalOrders: number;
+        stores: Set<string>;
+        monthlyBoxes: Map<string, number>;
+        monthlyTotalBoxes: Map<string, number>;
+        dealStoreCounts: Map<string, number>;
+      };
+      const groupStats = new Map<string, GroupStat>();
+
+      // 近三月与筛选时间段取并集
+      const dealFrom = dealDateFrom || dateFrom;
+      const dealTo = dealDateTo || dateTo;
+      const rangeFrom = dealFrom < dateFrom ? dealFrom : dateFrom;
+      const rangeTo = dealTo > dateTo ? dealTo : dateTo;
+
+      const brandVals = filters?.brand ?? [];
+      const specVals = filters?.specification ?? [];
+      const matchesBrandSpec = (brand?: string, spec?: string): boolean => {
+        if (brandVals.length > 0 && !brandVals.includes(brand ?? '')) return false;
+        if (specVals.length > 0 && !specVals.includes(spec ?? '')) return false;
+        return true;
+      };
 
       for (const record of memDataset.records) {
         if (!record || typeof record !== 'object') continue;
@@ -2512,21 +2609,11 @@ export class DatasetService implements OnModuleInit {
         if (seenHashes.has(hash)) continue;
         seenHashes.add(hash);
 
-        // 日期范围过滤
+        // 日期范围过滤（并集区间）
         const normalizedDate = parseDate(dd);
         if (!normalizedDate) continue;
-        if (normalizedDate < dateFrom || normalizedDate > dateTo) continue;
+        if (normalizedDate < rangeFrom || normalizedDate > rangeTo) continue;
 
-        // 品牌筛选
-        if (filters?.brand && filters.brand.length > 0) {
-          const brand = String(record['品牌'] ?? '');
-          if (!filters.brand.includes(brand)) continue;
-        }
-        // 规格筛选
-        if (filters?.specification && filters.specification.length > 0) {
-          const spec = String(record['产品-规格'] ?? '');
-          if (!filters.specification.includes(spec)) continue;
-        }
         // sheetType 筛选
         if (filters?.sheetType && filters.sheetType.length > 0) {
           const st = String(record['_sheetType'] ?? '');
@@ -2551,23 +2638,60 @@ export class DatasetService implements OnModuleInit {
         }
 
         const boxValue = boxCountField ? (parseFloat(String(record[boxCountField] ?? '')) || 0) : 0;
+        const monthKey = normalizedDate.slice(0, 7);
+        const matched = matchesBrandSpec(String(record['品牌'] ?? ''), String(record['产品-规格'] ?? ''));
+
         const key = compositeKey(salesRep, region, tier);
-        const stats = groupStats.get(key);
-        if (stats) {
-          stats.totalOrders += boxValue;
-          stats.stores.add(cd);
-        } else {
-          groupStats.set(key, {
+        let stats = groupStats.get(key);
+        if (!stats) {
+          stats = {
             salesRep, region, tier,
-            totalOrders: boxValue,
-            stores: new Set([cd]),
-          });
+            totalOrders: 0,
+            stores: new Set(),
+            monthlyBoxes: new Map(),
+            monthlyTotalBoxes: new Map(),
+            dealStoreCounts: new Map(),
+          };
+          groupStats.set(key, stats);
+        }
+
+        // 近三月区间：统计每月总箱数与匹配箱数
+        if (normalizedDate >= dateFrom && normalizedDate <= dateTo) {
+          stats.monthlyTotalBoxes.set(monthKey, (stats.monthlyTotalBoxes.get(monthKey) ?? 0) + boxValue);
+          if (matched) {
+            stats.totalOrders += boxValue;
+            stats.stores.add(cd);
+            stats.monthlyBoxes.set(monthKey, (stats.monthlyBoxes.get(monthKey) ?? 0) + boxValue);
+          }
+        }
+        // 筛选时间段：统计匹配门店的成交次数
+        if (matched && normalizedDate >= dealFrom && normalizedDate <= dealTo) {
+          stats.dealStoreCounts.set(cd, (stats.dealStoreCounts.get(cd) ?? 0) + 1);
         }
       }
       this.logger.log(`[Memory] BrandSpecStats 交易数据: ${groupStats.size} 个业代组`);
 
+      // 近三月月份列表
+      const months: string[] = [];
+      {
+        const [fy, fm] = dateFrom.slice(0, 7).split('-').map(Number);
+        const [ty, tm] = dateTo.slice(0, 7).split('-').map(Number);
+        let y = fy; let m = fm;
+        while (y < ty || (y === ty && m <= tm)) {
+          months.push(`${y}-${String(m).padStart(2, '0')}`);
+          m += 1;
+          if (m > 12) { m = 1; y += 1; }
+        }
+      }
+
       const rows: BrandSpecStatsRow[] = [];
       for (const stats of groupStats.values()) {
+        const monthlyBoxes = months.map((mk) => Math.round(stats.monthlyBoxes.get(mk) ?? 0));
+        const monthlyTotalBoxes = months.map((mk) => Math.round(stats.monthlyTotalBoxes.get(mk) ?? 0));
+        let repeatDealStores = 0;
+        for (const cnt of stats.dealStoreCounts.values()) {
+          if (cnt >= 2) repeatDealStores += 1;
+        }
         rows.push({
           salesRep: stats.salesRep,
           region: stats.region,
@@ -2575,6 +2699,10 @@ export class DatasetService implements OnModuleInit {
           servicePoints: 0,
           totalOrders: Math.round(stats.totalOrders),
           storeCount: stats.stores.size,
+          monthlyBoxes,
+          monthlyTotalBoxes,
+          repeatDealStores,
+          dealStores: stats.dealStoreCounts.size,
         });
       }
       return { rows };
@@ -2694,11 +2822,11 @@ export class DatasetService implements OnModuleInit {
         }
       }
 
-      // 4) 生成按维度值的6个月列表
+      // 4) 生成按维度值的6个月列表（近期月份在前）
       const rows: BrandSpecDimensionMonthlyStat[] = [];
       for (const brand of requestedBrands) {
         const monthly: BrandSpecMonthlyStat[] = [];
-        for (let i = 6; i >= 1; i--) {
+        for (let i = 1; i <= 6; i++) {
           const d = new Date(currentMonthStart);
           d.setMonth(d.getMonth() - i);
           const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -2709,7 +2837,7 @@ export class DatasetService implements OnModuleInit {
       }
       for (const spec of requestedSpecs) {
         const monthly: BrandSpecMonthlyStat[] = [];
-        for (let i = 6; i >= 1; i--) {
+        for (let i = 1; i <= 6; i++) {
           const d = new Date(currentMonthStart);
           d.setMonth(d.getMonth() - i);
           const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -2823,7 +2951,7 @@ export class DatasetService implements OnModuleInit {
       const rows: BrandSpecDimensionMonthlyStat[] = [];
       for (const brand of requestedBrands) {
         const monthly: BrandSpecMonthlyStat[] = [];
-        for (let i = 6; i >= 1; i--) {
+        for (let i = 1; i <= 6; i++) {
           const d = new Date(currentMonthStart);
           d.setMonth(d.getMonth() - i);
           const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -2834,7 +2962,7 @@ export class DatasetService implements OnModuleInit {
       }
       for (const spec of requestedSpecs) {
         const monthly: BrandSpecMonthlyStat[] = [];
-        for (let i = 6; i >= 1; i--) {
+        for (let i = 1; i <= 6; i++) {
           const d = new Date(currentMonthStart);
           d.setMonth(d.getMonth() - i);
           const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -4347,7 +4475,57 @@ export class DatasetService implements OnModuleInit {
     m = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日?$/);
     if (m) return `${m[1]}-${m[2].padStart(2, '0')}`;
 
+    // 点分隔完整日期（ATP费用 sheet：2026.07.01）
+    m = s.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
+    if (m) return `${m[1]}-${m[2].padStart(2, '0')}`;
+
     return null;
+  }
+
+  /** 在 YYYY-MM 基础上增加 offset 个月 */
+  private addMonthsToYm(ym: string, offset: number): string {
+    const [y, m] = ym.split('-').map(Number);
+    const idx = y * 12 + (m - 1) + offset;
+    const ny = Math.floor(idx / 12);
+    const nm = (idx % 12) + 1;
+    return `${ny}-${String(nm).padStart(2, '0')}`;
+  }
+
+  /**
+   * 构建 ATP 付费 map：从「ATP费用」sheet 聚合所选月份范围内各门店的付费金额。
+   * 费用逻辑：每条记录代表一个季度账单，记录金额为三个月总费用，
+   * 单月费用 = 记录金额 ÷ 3，分摊到「执行开始日期」起覆盖的 3 个月；
+   * 仅累加落在所选 [startYm, endYm] 区间内的月份分摊额。
+   */
+  private buildAtpPaidMap(
+    expenses: ExpenseRecord[],
+    startYm: string,
+    endYm: string,
+  ): Map<string, number> {
+    const atpPaidMap = new Map<string, number>();
+    for (const e of expenses) {
+      if (String(e.sheetType ?? '').trim() !== 'ATP费用') continue;
+
+      const dateValue = String(e.extras?.['执行开始日期'] ?? '').trim();
+      const recordYm = dateValue ? this.parseAtpMonthStrict(dateValue) : null;
+      if (!recordYm) continue;
+
+      const code = this.normalizeAtpCustomerCode(String(e.customerCode ?? '').trim());
+      if (!code) continue;
+
+      const totalAmount = this.parseNumeric(e.extras?.['计划付费金额'] ?? 0);
+      if (totalAmount <= 0) continue;
+
+      // 单月费用 = 记录金额 ÷ 3（记录金额为三个月总费用）
+      const monthlyFee = totalAmount / 3;
+      // 记录覆盖「执行开始日期」起的 3 个月，分摊各月费用到所选区间内
+      for (let off = 0; off < 3; off++) {
+        const coveredYm = this.addMonthsToYm(recordYm, off);
+        if (coveredYm < startYm || coveredYm > endYm) continue;
+        atpPaidMap.set(code, (atpPaidMap.get(code) ?? 0) + monthlyFee);
+      }
+    }
+    return atpPaidMap;
   }
 
   /** ATP 绩效：以客户资料 + 费用资料（客户销额）按客户编码关联汇总 */
@@ -4372,7 +4550,6 @@ export class DatasetService implements OnModuleInit {
     // 按所选月份范围过滤费用资料
     const startYm = String(dateFrom ?? '').slice(0, 7);
     const endYm = String(dateTo ?? '').slice(0, 7);
-    const selectedMonthCount = this.countMonths(startYm, endYm);
 
     // 1. 构建客户编码 -> 门店销额 映射（仅取 sheetType 为「客户销额」且在月份范围内的记录）
     const salesMap = new Map<string, { totalSales: number }>();
@@ -4393,7 +4570,10 @@ export class DatasetService implements OnModuleInit {
       salesMap.set(code, cur);
     }
 
-    // 2. 按（所别、阶层、业代）分组聚合
+    // 2. 构建 ATP 付费 map：从「ATP费用」sheet 聚合所选月份内各门店单月付费金额（记录金额÷3）
+    const atpPaidMap = this.buildAtpPaidMap(expenses, startYm, endYm);
+
+    // 3. 按（所别、阶层、业代）分组聚合
     const groupMap = new Map<string, AtpPerformanceRow>();
     for (const c of customers) {
       const code = this.normalizeAtpCustomerCode(String(c.customerCode ?? '').trim());
@@ -4403,7 +4583,7 @@ export class DatasetService implements OnModuleInit {
       if (!region || !tier || !salesRep) continue;
 
       const totalPoints = this.parseNumeric(c.extras['总点数'] ?? 1);
-      const paidAmount = this.parseNumeric(c.extras['付费金额'] ?? 0);
+      const paidAmount = atpPaidMap.get(code) ?? 0;
       const paidPoints = this.parseNumeric(c.extras['付费点数'] ?? (paidAmount > 0 ? 1 : 0));
       const storeSales = salesMap.get(code)?.totalSales ?? 0;
       const paidStoreSales = paidAmount > 0 ? storeSales : 0;
@@ -4419,7 +4599,7 @@ export class DatasetService implements OnModuleInit {
         if (storeSales <= 0) {
           feeNoDeal = 1;
         } else {
-          const storeFeeRatio = (paidAmount * selectedMonthCount) / storeSales;
+          const storeFeeRatio = paidAmount / storeSales;
           if (storeFeeRatio <= feeLe10Threshold) feeLe10 = 1;
           else if (storeFeeRatio <= feeGt15Threshold) fee10to15 = 1;
           else feeGt15 = 1;
@@ -4480,7 +4660,7 @@ export class DatasetService implements OnModuleInit {
         ...r,
         paidPointFeeRatio:
           r.paidStoreSales > 0
-            ? (r.paidAmount * selectedMonthCount) / r.paidStoreSales
+            ? r.paidAmount / r.paidStoreSales
             : 0,
         paidPointSalesRatio: r.totalStoreSales > 0 ? r.paidStoreSales / r.totalStoreSales : 0,
         feeRatioLe10Ratio: r.paidPoints > 0 ? r.feeRatioLe10 / r.paidPoints : 0,
@@ -4516,7 +4696,6 @@ export class DatasetService implements OnModuleInit {
 
     const startYm = String(dateFrom ?? '').slice(0, 7);
     const endYm = String(dateTo ?? '').slice(0, 7);
-    const selectedMonthCount = this.countMonths(startYm, endYm);
 
     const salesMap = new Map<string, { totalSales: number }>();
     for (const e of expenses) {
@@ -4536,6 +4715,9 @@ export class DatasetService implements OnModuleInit {
       salesMap.set(code, cur);
     }
 
+    // 构建 ATP 付费 map：从「ATP费用」sheet 聚合所选月份内各门店单月付费金额（记录金额÷3）
+    const atpPaidMap = this.buildAtpPaidMap(expenses, startYm, endYm);
+
     const rows: AtpPerformanceStoreRow[] = [];
     for (const c of customers) {
       const code = this.normalizeAtpCustomerCode(String(c.customerCode ?? '').trim());
@@ -4546,7 +4728,7 @@ export class DatasetService implements OnModuleInit {
 
       const customerName = String(c.customerName ?? '').trim();
       const totalPoints = this.parseNumeric(c.extras['总点数'] ?? 1);
-      const paidAmount = this.parseNumeric(c.extras['付费金额'] ?? 0);
+      const paidAmount = atpPaidMap.get(code) ?? 0;
       const paidPoints = this.parseNumeric(c.extras['付费点数'] ?? (paidAmount > 0 ? 1 : 0));
       const storeSales = salesMap.get(code)?.totalSales ?? 0;
       const paidStoreSales = paidAmount > 0 ? storeSales : 0;
@@ -4561,7 +4743,7 @@ export class DatasetService implements OnModuleInit {
         if (storeSales <= 0) {
           feeRatioNoDeal = 1;
         } else {
-          const storeFeeRatio = (paidAmount * selectedMonthCount) / storeSales;
+          const storeFeeRatio = paidAmount / storeSales;
           if (storeFeeRatio <= feeLe10Threshold) feeRatioLe10 = 1;
           else if (storeFeeRatio <= feeGt15Threshold) feeRatio10to15 = 1;
           else feeRatioGt15 = 1;
@@ -4571,7 +4753,7 @@ export class DatasetService implements OnModuleInit {
       }
 
       const paidPointFeeRatio = paidStoreSales > 0
-        ? (paidAmount * selectedMonthCount) / paidStoreSales
+        ? paidAmount / paidStoreSales
         : 0;
       const paidPointSalesRatio = storeSales > 0 ? paidStoreSales / storeSales : 0;
 
@@ -4637,13 +4819,6 @@ export class DatasetService implements OnModuleInit {
     const m = trimmed.match(/^0+(\d+)$/);
     if (m) return `1201/${m[1]}`;
     return trimmed;
-  }
-
-  private countMonths(startYm: string, endYm: string): number {
-    const [sy, sm] = startYm.split('-').map(Number);
-    const [ey, em] = endYm.split('-').map(Number);
-    if (!sy || !sm || !ey || !em) return 1;
-    return (ey - sy) * 12 + (em - sm) + 1;
   }
 
 }

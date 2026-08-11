@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit/logger';
-import { expenseApi, reportApi } from '@client/src/api/index';
+import { expenseApi } from '@client/src/api/index';
 import { Button } from '@/components/ui/button';
 import {
   Empty,
@@ -13,7 +13,7 @@ import {
   EmptyDescription,
   EmptyContent,
 } from '@/components/ui/empty';
-import type { ExpiryAnalysisFilters, ExpiryAnalysisResult, ExpiryDrilldownResult, ReportSheetData } from '@shared/api.interface';
+import type { ExpiryAnalysisFilters, ExpiryAnalysisResult, ExpiryDrilldownResult } from '@shared/api.interface';
 import { AiAnalysisPanel } from '@/components/business-ui/ai-analysis-panel';
 import ExpiryKpiCards from './ExpiryKpiCards';
 import ExpiryFilterBar from './ExpiryFilterBar';
@@ -220,61 +220,6 @@ const ExpiryExpensePage: React.FC = () => {
     }
   }, [activeDrilldown, filters]);
 
-  const handleExport = useCallback(async () => {
-    if (!data || loading) return;
-    try {
-      const sheets: ReportSheetData[] = [
-        {
-          sheetName: 'KPI',
-          rows: [
-            ['临期费用总额', data.kpis.totalAmount],
-            ['环比变化（%）', data.kpis.monthOverMonthChange],
-            ['涉及门店数', data.kpis.involvedStoreCount],
-          ],
-        },
-        {
-          sheetName: '月度趋势',
-          rows: [
-            ['月份', '临期费用', '记录数'],
-            ...data.trend.map((item) => [item.month, item.amount, item.recordCount]),
-          ],
-        },
-        {
-          sheetName: '排行',
-          rows: [
-            ['维度', '值', '金额', '占比', '记录数'],
-            ...[
-              ...data.regionRank.map((r) => ['所别', r.value, r.amount, r.share, r.recordCount]),
-              ...data.tierRank.map((r) => ['阶层', r.value, r.amount, r.share, r.recordCount]),
-              ...data.dealerTypeRank.map((r) => ['形态', r.value, r.amount, r.share, r.recordCount]),
-              ...data.businessRank.map((r) => ['业务', r.value, r.amount, r.share, r.recordCount]),
-              ...data.specificationRank.map((r) => ['规格', r.value, r.amount, r.share, r.recordCount]),
-            ],
-          ],
-        },
-        {
-          sheetName: '预警与建议',
-          rows: [
-            ['类型', '等级', '标题', '描述', '建议', '金额'],
-            ...data.warnings.map((w) => [w.type, w.level, w.title, w.description, w.suggestion, w.amount]),
-          ],
-        },
-      ];
-
-      const fileName = `临期费用分析报告_${new Date().toISOString().slice(0, 10)}`;
-      await reportApi.generateReport({
-        type: 'expiry-analysis',
-        title: fileName,
-        fileName,
-        sheets,
-      });
-      toast.success('报表已生成，请点击右上角下载按钮查看/下载');
-    } catch (err) {
-      logger.error('Failed to export expiry analysis:', err);
-      toast.error('导出失败，请重试');
-    }
-  }, [data, loading]);
-
   if (!hasExpenseData && !loading && !error && hasConfirmedOnce) {
     return (
       <div className="mx-auto max-w-[1400px] px-6 py-6">
@@ -325,11 +270,9 @@ const ExpiryExpensePage: React.FC = () => {
           options={filterOptions}
           onChange={setFilters}
           onReset={handleReset}
-          onExport={handleExport}
           onConfirm={handleConfirm}
           canConfirm={canConfirm}
           loading={loading}
-          exportDisabled={loading || !data || displayData.kpis.totalAmount === 0}
           rightActions={
             <AiAnalysisPanel
               pageScope="expense/expiry"
@@ -361,11 +304,9 @@ const ExpiryExpensePage: React.FC = () => {
         options={displayData.availableFilters}
         onChange={setFilters}
         onReset={handleReset}
-        onExport={handleExport}
         onConfirm={handleConfirm}
         canConfirm={canConfirm}
         loading={loading}
-        exportDisabled={loading || !data || displayData.kpis.totalAmount === 0}
         rightActions={
           <AiAnalysisPanel
             pageScope="expense/expiry"
@@ -403,9 +344,10 @@ const ExpiryExpensePage: React.FC = () => {
         onDrillDown={handleDrillDown}
         trend={displayData.trend}
         amountThreshold={filters.amountThreshold ?? 500}
-        onAmountThresholdChange={(value) =>
-          setFilters((prev) => ({ ...prev, amountThreshold: value }))
-        }
+        onAmountThresholdChange={(value) => {
+          setFilters((prev) => ({ ...prev, amountThreshold: value }));
+          setConfirmedFilters((prev) => ({ ...prev, amountThreshold: value }));
+        }}
       />
 
       <ExpiryDrilldownPanel

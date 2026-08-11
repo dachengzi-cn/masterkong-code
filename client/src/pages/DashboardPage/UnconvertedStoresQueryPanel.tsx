@@ -571,7 +571,7 @@ const UnconvertedStoresQueryPanel: React.FC<UnconvertedStoresQueryPanelProps> = 
 
                 const renderTable = (groups: RegionGroup[], showTotal: boolean) => (
                   <div className="overflow-auto bg-card border border-border rounded-sm" style={tableStyle}>
-                    <table className="w-full border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
+                    <table className="w-full border-separate border-spacing-0 text-xs" style={{ tableLayout: 'fixed' }}>
                       <thead>
                         <tr style={{ backgroundColor: 'hsl(217, 40%, 95%)' }}>
                           <th
@@ -914,7 +914,7 @@ const UnconvertedStoresQueryPanel: React.FC<UnconvertedStoresQueryPanelProps> = 
 
               {/* 分月未成交明细表 */}
               <div className="overflow-auto rounded-sm border border-border" style={{ maxHeight: 340 }}>
-                <table className="w-full border-collapse text-xs">
+                <table className="w-full border-separate border-spacing-0 text-xs">
                   <thead>
                     <tr style={{ backgroundColor: 'hsl(217, 40%, 95%)' }}>
                       <th className="border-b border-r border-border px-3 py-2 !font-bold text-black text-center whitespace-nowrap" style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'hsl(217, 40%, 95%)' }}>

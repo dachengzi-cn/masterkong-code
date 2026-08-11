@@ -757,7 +757,7 @@ const SalesRepHeatmap: React.FC<SalesRepHeatmapProps> = ({
             </div>
           </div>
           <div className="overflow-auto bg-card border border-border rounded-sm" style={{ maxHeight: 'calc(100vh - 260px)' }}>
-            <table className="w-full border-collapse text-xs" style={{ minWidth: totalFixedWidth + columns.length * colWidth, tableLayout: 'fixed' }}>
+            <table className="w-full border-separate border-spacing-0 text-xs" style={{ minWidth: totalFixedWidth + columns.length * colWidth, tableLayout: 'fixed' }}>
               <thead>
                 <tr style={{ backgroundColor: 'hsl(217, 40%, 95%)' }}>
                   {fixedCols.map((col, ci) => {

@@ -163,17 +163,72 @@ function parseExpenseExcel(
   );
 }
 
+/** 从字符串中提取 YYYY-MM 月份；支持 "8月 2026"、"2026年8月"、"2026.07.01"、"2026-07-01"、"2026/07/01" 等格式 */
+function parseMonthFromString(raw: string): string | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+
+  // 中文格式: "8月 2026" / "2026年8月"
+  let m = s.match(/(\d{1,2})月\s*(\d{4})/);
+  if (m) {
+    const mo = parseInt(m[1], 10);
+    const yr = parseInt(m[2], 10);
+    if (mo >= 1 && mo <= 12) return `${yr}-${String(mo).padStart(2, '0')}`;
+  }
+  m = s.match(/(\d{4})年(\d{1,2})月/);
+  if (m) {
+    const mo = parseInt(m[2], 10);
+    if (mo >= 1 && mo <= 12) return `${m[1]}-${String(mo).padStart(2, '0')}`;
+  }
+
+  // 完整日期格式: 2026.07.01 / 2026-07-01 / 2026/07/01
+  m = s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  if (m) {
+    const mo = parseInt(m[2], 10);
+    const day = parseInt(m[3], 10);
+    if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31) {
+      return `${m[1]}-${String(mo).padStart(2, '0')}`;
+    }
+  }
+
+  return null;
+}
+
+/** 宽松解析：仅接受 "2026.07" / "2026-07" / "2026/07" 两段式格式（用于键名明确为日期/月份字段时） */
+function parseMonthRelaxed(raw: string): string | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4})[./-](\d{1,2})$/);
+  if (m) {
+    const mo = parseInt(m[2], 10);
+    if (mo >= 1 && mo <= 12) return `${m[1]}-${String(mo).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+/** 从一条费用记录中提取 YYYY-MM 月份 */
+function extractMonthFromRecord(rec: { extras: Record<string, unknown> }): string | null {
+  for (const [key, value] of Object.entries(rec.extras ?? {})) {
+    const raw = String(value ?? '');
+    if (!raw) continue;
+    // 严格完整格式，不依赖字段名
+    const strict = parseMonthFromString(raw);
+    if (strict) return strict;
+    // 两段式 "2026.07"：仅当字段名明确为日期/月份字段时才解析，避免误判金额等数值
+    const k = String(key ?? '');
+    if (/(日期|时间|月|期间|年月|yearmonth|month|period)/i.test(k)) {
+      const relaxed = parseMonthRelaxed(raw);
+      if (relaxed) return relaxed;
+    }
+  }
+  return null;
+}
+
 function extractUploadMonths(records: ExpenseRecord[]): string[] {
   const monthSet = new Set<string>();
   for (const rec of records) {
-    const raw = String(Object.values(rec.extras).find((v) => /\d+月\s+\d{4}/.test(String(v))) ?? '');
-    if (!raw) continue;
-    const match = raw.match(/(\d+)月\s+(\d{4})/);
-    if (match) {
-      const m = parseInt(match[1], 10);
-      const y = parseInt(match[2], 10);
-      monthSet.add(`${y}-${String(m).padStart(2, '0')}`);
-    }
+    const month = extractMonthFromRecord(rec);
+    if (month) monthSet.add(month);
   }
   return Array.from(monthSet).sort();
 }
@@ -291,14 +346,8 @@ const ExpenseUpload = React.forwardRef<HTMLInputElement, ExpenseUploadProps>(
         let recordsToInsert = dataToImport.items;
         if (uploadMonths.length > 0 && uploadMonths.length < allMonths.length) {
           recordsToInsert = recordsToInsert.filter((rec) => {
-            const raw = String(Object.values(rec.extras).find((v) => /\d+月\s+\d{4}/.test(String(v))) ?? '');
-            if (!raw) return false;
-            const match = raw.match(/(\d+)月\s+(\d{4})/);
-            if (!match) return false;
-            const m = parseInt(match[1], 10);
-            const y = parseInt(match[2], 10);
-            const ym = `${y}-${String(m).padStart(2, '0')}`;
-            return uploadMonths.includes(ym);
+            const ym = extractMonthFromRecord(rec);
+            return !!ym && uploadMonths.includes(ym);
           });
         }
 

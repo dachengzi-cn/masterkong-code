@@ -67,7 +67,7 @@ export function SearchableSelect({
             triggerClassName,
           )}
         >
-          <span className={cn('truncate', !value && 'text-muted-foreground')}>
+          <span className={cn('flex-1 truncate text-center', !value && 'text-muted-foreground')}>
             {displayValue}
           </span>
           <ChevronsUpDown className="size-3 shrink-0 text-muted-foreground" />

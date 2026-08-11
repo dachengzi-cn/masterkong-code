@@ -33,6 +33,7 @@ const ExpiryExpensePage = lazy(() => import('@/pages/ExpiryExpensePage/ExpiryExp
 const AtpExpensePage = lazy(() => import('@/pages/AtpExpensePage/AtpExpensePage'));
 const OverstockPage = lazy(() => import('@/pages/OverstockPage/OverstockPage'));
 const ServiceAnalysisPage = lazy(() => import('@/pages/ServiceAnalysisPage/ServiceAnalysisPage'));
+const CapabilityPage = lazy(() => import('@/pages/CapabilityPage/CapabilityPage'));
 
 export interface SheetItem {
   id: string;
@@ -48,6 +49,8 @@ interface SheetWorkspaceProps {
   duplicateSheetIds?: Set<string>;
   onActivateSheet: (id: string) => void;
   onCloseSheet: (id: string) => void;
+  onCloseOtherSheets?: (id: string) => void;
+  onCloseAllSheets?: () => void;
   onReorderSheets?: (newSheets: SheetItem[]) => void;
 }
 
@@ -89,6 +92,8 @@ function SheetContent({ path }: { path: string }) {
         return wrap(<OverstockPage />);
       case '/service-analysis':
         return wrap(<ServiceAnalysisPage />);
+      case '/capability':
+        return wrap(<CapabilityPage />);
       default:
         return (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -159,6 +164,8 @@ export function SheetWorkspace({
   duplicateSheetIds,
   onActivateSheet,
   onCloseSheet,
+  onCloseOtherSheets,
+  onCloseAllSheets,
   onReorderSheets,
 }: SheetWorkspaceProps) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -331,7 +338,7 @@ export function SheetWorkspace({
                       </span>
                     </button>
                   </ContextMenuTrigger>
-                  <ContextMenuContent className="w-44">
+                  <ContextMenuContent className="w-36">
                     <ContextMenuItem
                       onSelect={() => handleRefreshSheet(sheet.id)}
                       disabled={isRefreshing}
@@ -341,7 +348,23 @@ export function SheetWorkspace({
                       ) : (
                         <RefreshCw className="mr-2 size-3.5" />
                       )}
-                      刷新当前标签页
+                      刷新
+                    </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => onCloseSheet(sheet.id)}>
+                      <X className="mr-2 size-3.5" />
+                      关闭
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onSelect={() => onCloseOtherSheets?.(sheet.id)}
+                      disabled={sheets.length <= 1}
+                    >
+                      关闭其他
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onSelect={() => onCloseAllSheets?.()}
+                      disabled={sheets.length === 0}
+                    >
+                      关闭所有
                     </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>

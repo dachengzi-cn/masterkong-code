@@ -487,6 +487,45 @@ export const aiSkillIteration = pgTable("ai_skill_iteration", {
 	index("idx_ai_skill_iteration_created").on(table.createdAt),
 ]);
 
+// ========== M7: 业务综合能力评估 - 维度配置表 ==========
+export const capabilityDimensionConfig = pgTable("capability_dimension_config", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	dimensionKey: varchar("dimension_key", { length: 100 }).notNull().unique(),
+	name: varchar("name", { length: 255 }).notNull(),
+	weight: numeric("weight", { precision: 5, scale: 2 }).notNull().default('0.125'),
+	enabled: boolean("enabled").notNull().default(true),
+	thresholdHigh: integer("threshold_high").notNull().default(75),
+	thresholdLow: integer("threshold_low").notNull().default(60),
+	sortOrder: integer("sort_order").notNull().default(0),
+	// System field: Creation time (auto-filled, do not modify)
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	// System field: Creator (auto-filled, do not modify)
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+	// System field: Update time (auto-filled, do not modify)
+	updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	// System field: Updater (auto-filled, do not modify)
+	updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+	uniqueIndex("capability_dimension_config_dimension_key_key").on(table.dimensionKey),
+	index("idx_cap_dim_key").on(table.dimensionKey),
+]);
+
+// ========== M7: 业务综合能力评估 - 用户数据范围表（RBAC 预留） ==========
+export const capabilityUserScope = pgTable("capability_user_scope", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	userId: varchar("user_id", { length: 255 }).notNull(),
+	region: varchar("region", { length: 255 }).notNull(),
+	// System field: Creation time (auto-filled, do not modify)
+	createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+	// System field: Creator (auto-filled, do not modify)
+	createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+	uniqueIndex("idx_cap_scope_user_region").on(table.userId, table.region),
+]);
+
 // table aliases
 export const expenseProfileTable = expenseProfile;
 export const routeProfileTable = routeProfile;
@@ -498,3 +537,5 @@ export const aiDesignDocTable = aiDesignDoc;
 export const aiAnalysisFeedbackTable = aiAnalysisFeedback;
 export const aiSkillMetricTable = aiSkillMetric;
 export const aiSkillIterationTable = aiSkillIteration;
+export const capabilityDimensionConfigTable = capabilityDimensionConfig;
+export const capabilityUserScopeTable = capabilityUserScope;

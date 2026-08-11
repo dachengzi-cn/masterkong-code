@@ -17,6 +17,7 @@ import type {
   OverstockAnalysisResult,
   FilterOptions,
   ReportRow,
+  ReportSheetData,
   ReportCellStyle,
 } from '@shared/api.interface';
 
@@ -296,7 +297,104 @@ const OverstockPage: React.FC = () => {
         alignment: { horizontal: 'center', vertical: 'center' },
         border: { bottom: { style: 'thin', color: { rgb: '000000' } } },
       };
-      const rows: ReportRow[] = [
+      const centerStyle: ReportCellStyle = {
+        alignment: { horizontal: 'center', vertical: 'center' },
+      };
+      const styleHeader = (rows: ReportRow[]): ReportRow[] =>
+        rows.map((row, ri) =>
+          ri === 0
+            ? row.map((cell) => {
+                const value =
+                  typeof cell === 'object' && cell !== null && 'v' in cell
+                    ? cell.v
+                    : cell;
+                return { v: value as string | number | boolean | null, s: headerStyle };
+              })
+            : row,
+        );
+
+      const sheets: ReportSheetData[] = [];
+
+      // 汇总
+      const summaryRows: ReportRow[] = [
+        ['指标', '数值'],
+        ['总进货金额', result.summary.totalPurchaseAmount],
+        ['总临期金额', result.summary.totalExpiryAmount],
+        ['平均转化率', { v: result.summary.avgConversionRate, z: '0.00%' }],
+        ['标记门店数', result.summary.flaggedStoreCount],
+        ['标记业代数', result.summary.flaggedRepCount],
+        ['阈值（mean + 2σ）', { v: result.summary.threshold, z: '0.00%' }],
+      ];
+      sheets.push({
+        sheetName: '汇总',
+        rows: styleHeader(summaryRows),
+        colWidths: [20, 16],
+        showGridLines: false,
+      });
+
+      // 风险门店
+      const storeRows: ReportRow[] = [
+        ['门店编码', '门店名称', '所别', '业代', '进货金额', '进货数量', '临期金额', '转化率', '是否标记'],
+        ...result.storeRisks.map((r) => [
+          r.customerCode,
+          r.customerName,
+          r.region,
+          r.salesRep,
+          r.purchaseAmount,
+          r.purchaseQuantity,
+          r.expiryAmount,
+          { v: r.conversionRate, z: '0.00%', s: centerStyle },
+          r.isFlagged ? '是' : '否',
+        ] as ReportRow),
+      ];
+      sheets.push({
+        sheetName: '风险门店',
+        rows: styleHeader(storeRows),
+        colWidths: [16, 20, 14, 14, 12, 12, 14, 12, 12],
+        showGridLines: false,
+      });
+
+      // 风险业代
+      const repRows: ReportRow[] = [
+        ['业代', '所别', '负责门店数', '进货金额', '进货数量', '临期金额', '转化率', '是否标记'],
+        ...result.repRisks.map((r) => [
+          r.salesRep,
+          r.region,
+          r.storeCount,
+          r.purchaseAmount,
+          r.purchaseQuantity,
+          r.expiryAmount,
+          { v: r.conversionRate, z: '0.00%', s: centerStyle },
+          r.isFlagged ? '是' : '否',
+        ] as ReportRow),
+      ];
+      sheets.push({
+        sheetName: '风险业代',
+        rows: styleHeader(repRows),
+        colWidths: [14, 14, 12, 12, 12, 14, 12, 12],
+        showGridLines: false,
+      });
+
+      // 规格风险
+      const specRows: ReportRow[] = [
+        ['规格', '进货金额', '进货数量', '临期金额', '转化率'],
+        ...result.specRisks.map((r) => [
+          r.specification,
+          r.purchaseAmount,
+          r.purchaseQuantity,
+          r.expiryAmount,
+          { v: r.conversionRate, z: '0.00%', s: centerStyle },
+        ] as ReportRow),
+      ];
+      sheets.push({
+        sheetName: '规格风险',
+        rows: styleHeader(specRows),
+        colWidths: [30, 12, 12, 14, 12],
+        showGridLines: false,
+      });
+
+      // 差异门店分析明细（门店 × 规格 × 进货月的临期明细，保留原「导出」报表表名）
+      const cohortRows: ReportRow[] = [
         [
           '门店编码',
           '门店名称',
@@ -308,7 +406,7 @@ const OverstockPage: React.FC = () => {
           '第5月临期额',
           '临期金额',
           '转化率',
-        ].map((h) => ({ v: h, s: headerStyle })),
+        ],
         ...result.cohorts.map((c) => [
           c.customerCode,
           c.customerName,
@@ -319,21 +417,22 @@ const OverstockPage: React.FC = () => {
           c.expiryMonth4Amount,
           c.expiryMonth5Amount,
           c.expiryAmount,
-          { v: c.conversionRate, z: '0.00%' },
+          { v: c.conversionRate, z: '0.00%', s: centerStyle },
         ] as ReportRow),
       ];
+      sheets.push({
+        sheetName: '差异门店分析明细',
+        rows: styleHeader(cohortRows),
+        colWidths: [16, 20, 30, 12, 12, 12, 14, 14, 14, 12],
+        showGridLines: false,
+      });
+
       const fileName = `差异门店分析_${confirmedFilters.monthFrom ?? ''}_${confirmedFilters.monthTo ?? ''}`;
       await reportApi.generateReport({
         type: 'overstock',
         title: fileName,
         fileName,
-        sheets: [
-          {
-            sheetName: '差异门店分析明细',
-            rows,
-            colWidths: [16, 20, 30, 12, 12, 12, 14, 14, 14, 12],
-          },
-        ],
+        sheets,
       });
       toast.success('报表已生成，请点击右上角下载按钮查看/下载');
     } catch (err: unknown) {
@@ -374,11 +473,9 @@ const OverstockPage: React.FC = () => {
           options={filterOptions}
           onChange={setPendingFilters}
           onReset={handleReset}
-          onExport={handleExport}
           onConfirm={handleConfirm}
           canConfirm={canConfirm}
           loading={loading}
-          exportDisabled={loading || !hasAnyData}
         />
 
         <div className="flex items-center justify-center min-h-[40vh]">
@@ -405,11 +502,9 @@ const OverstockPage: React.FC = () => {
         options={filterOptions}
         onChange={setPendingFilters}
         onReset={handleReset}
-        onExport={handleExport}
         onConfirm={handleConfirm}
         canConfirm={canConfirm}
         loading={loading}
-        exportDisabled={loading || !hasAnyData}
       />
 
       {error && (
@@ -432,7 +527,8 @@ const OverstockPage: React.FC = () => {
       <OverstockAnalysisPanel
         data={data ?? defaultOverstockResult}
         loading={loading}
-        filters={confirmedFilters}
+        onExport={handleExport}
+        exportDisabled={loading || !hasAnyData}
       />
     </div>
   );

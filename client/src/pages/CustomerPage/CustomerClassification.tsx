@@ -566,13 +566,13 @@ const CustomerClassification: React.FC = () => {
         <div className="max-h-[400px] overflow-auto rounded-sm border border-border">
           <table className="w-full text-left text-xs">
             <thead className="sticky top-0 z-10">
-              <tr className="border-b border-border bg-accent/50">
-                <th className="whitespace-nowrap px-3 py-2 font-medium text-foreground">所别</th>
-                <th className="whitespace-nowrap px-3 py-2 font-medium text-foreground">层级</th>
-                <th className="whitespace-nowrap px-3 py-2 font-medium text-foreground">业代</th>
-                <th className="whitespace-nowrap px-3 py-2 text-right font-medium text-foreground">门店数</th>
-                <th className="whitespace-nowrap px-3 py-2 text-right font-medium text-foreground">付费门店数</th>
-                <th className="whitespace-nowrap px-3 py-2 text-right font-medium text-foreground">付费金额</th>
+              <tr className="border-b border-border bg-accent">
+                <th className="whitespace-nowrap px-3 py-2 text-center font-medium text-foreground">所别</th>
+                <th className="whitespace-nowrap px-3 py-2 text-center font-medium text-foreground">层级</th>
+                <th className="whitespace-nowrap px-3 py-2 text-center font-medium text-foreground">业代</th>
+                <th className="whitespace-nowrap px-3 py-2 text-center font-medium text-foreground">门店数</th>
+                <th className="whitespace-nowrap px-3 py-2 text-center font-medium text-foreground">付费门店数</th>
+                <th className="whitespace-nowrap px-3 py-2 text-center font-medium text-foreground">付费金额</th>
               </tr>
             </thead>
             <tbody>

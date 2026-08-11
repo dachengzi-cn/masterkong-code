@@ -195,9 +195,13 @@ export async function getBrandSpecStats(
   dateFrom: string,
   dateTo: string,
   filters?: HeatmapFilterParams,
+  dealDateFrom?: string,
+  dealDateTo?: string,
 ) {
   const safeId = String(id);
   const params: Record<string, string | number> = { dateFrom, dateTo };
+  if (dealDateFrom) params.dealDateFrom = dealDateFrom;
+  if (dealDateTo) params.dealDateTo = dealDateTo;
   if (filters) {
     for (const [key, val] of Object.entries(filters)) {
       if (Array.isArray(val) && val.length > 0) {

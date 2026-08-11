@@ -276,6 +276,8 @@ export class DatasetController {
     @Param('id') id: string,
     @Query('dateFrom') dateFrom: string,
     @Query('dateTo') dateTo: string,
+    @Query('dealDateFrom') dealDateFrom?: string,
+    @Query('dealDateTo') dealDateTo?: string,
     @Query('region') region?: string,
     @Query('tier') tier?: string,
     @Query('dealerType') dealerType?: string,
@@ -299,7 +301,7 @@ export class DatasetController {
       sheetType: split(sheetType) as HeatmapFilterParams['sheetType'],
       specification: split(specification),
       route: split(route),
-    });
+    }, dealDateFrom, dealDateTo);
   }
 
   @Get('brand-spec-options')

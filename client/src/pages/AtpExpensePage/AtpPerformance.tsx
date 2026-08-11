@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -75,6 +75,11 @@ const DEFAULT_THRESHOLDS: Required<AtpThresholdParams> = {
   salesLt1000: 1000,
   salesLt2000: 2000,
 };
+
+/** 冻结在表格左侧的列数（所别/阶层/业代/总点数） */
+const FROZEN_COLS = 4;
+/** 冻结表头实色背景（与 --accent 一致，避免横向滚动时下方内容透出） */
+const FROZEN_HEADER_BG = 'hsl(217, 40%, 95%)';
 
 /** 根据自定义参数动态生成表头列（费比/销额阈值随参数实时变化） */
 const buildColumns = (thresholds: AtpThresholdParams): ColumnDef[] => {
@@ -212,17 +217,7 @@ function baseCellStyle(): ReportCellStyle {
   };
 }
 
-const countMonths = (startYm: string, endYm: string): number => {
-  const [sy, sm] = startYm.split('-').map(Number);
-  const [ey, em] = endYm.split('-').map(Number);
-  if (!sy || !sm || !ey || !em) return 1;
-  return (ey - sy) * 12 + (em - sm) + 1;
-};
-
-const aggregateRows = (
-  items: AtpPerformanceRow[],
-  monthCount: number,
-): AtpPerformanceRow => {
+const aggregateRows = (items: AtpPerformanceRow[]): AtpPerformanceRow => {
   const totalPoints = items.reduce((s, r) => s + r.totalPoints, 0);
   const paidPoints = items.reduce((s, r) => s + r.paidPoints, 0);
   const paidAmount = items.reduce((s, r) => s + r.paidAmount, 0);
@@ -237,7 +232,8 @@ const aggregateRows = (
     paidAmount,
     totalStoreSales,
     paidStoreSales,
-    paidPointFeeRatio: paidStoreSales > 0 ? (paidAmount * monthCount) / paidStoreSales : 0,
+    // 后端 paidAmount 已为所选区间费用合计，不再乘以月份数
+    paidPointFeeRatio: paidStoreSales > 0 ? paidAmount / paidStoreSales : 0,
     paidPointSalesRatio: totalStoreSales > 0 ? paidStoreSales / totalStoreSales : 0,
     feeRatioLe10: items.reduce((s, r) => s + r.feeRatioLe10, 0),
     feeRatio10to15: items.reduce((s, r) => s + r.feeRatio10to15, 0),
@@ -535,7 +531,6 @@ const computeStoreMonthlyData = (
 
 const buildStoreDisplayRows = (
   rows: AtpPerformanceStoreRow[],
-  monthCount: number,
 ): StoreDisplayRow[] => {
   if (rows.length === 0) return [];
 
@@ -575,7 +570,7 @@ const buildStoreDisplayRows = (
           });
           i++;
         }
-        const salesRepTotal = aggregateRows(salesRepRows, monthCount);
+        const salesRepTotal = aggregateRows(salesRepRows);
         const salesRepTotalStoreSales = salesRepTotalMap.get(`${region}||${tier}||${salesRep}`) ?? 0;
         const regionTotalStoreSales = regionTotalMap.get(region) ?? 0;
         result.push({
@@ -593,7 +588,7 @@ const buildStoreDisplayRows = (
       }
       regionRows.push(...tierRows);
     }
-    const regionTotal = aggregateRows(regionRows, monthCount);
+    const regionTotal = aggregateRows(regionRows);
     const regionTotalStoreSales = regionTotalMap.get(region) ?? 0;
     result.push({
       ...regionTotal,
@@ -606,7 +601,7 @@ const buildStoreDisplayRows = (
       rowType: 'regionTotal',
     });
   }
-  const grandTotal = aggregateRows(rows, monthCount);
+  const grandTotal = aggregateRows(rows);
   result.push({
     ...grandTotal,
     paidPointSalesRatio: grandTotalStoreSales > 0 ? 1 : 0,
@@ -630,6 +625,9 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
   onLoadingChange,
 }) => {
   const navigate = useNavigate();
+  const tableRef = useRef<HTMLTableElement>(null);
+  // 前 FROZEN_COLS 列的实际宽度（用于 sticky left 偏移计算）
+  const [frozenColWidths, setFrozenColWidths] = useState<number[]>([]);
   const [data, setData] = useState<AtpPerformanceResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -749,10 +747,6 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
 
   const displayRows = useMemo<DisplayRow[]>(() => {
     if (baseRows.length === 0) return [];
-    const monthCount = countMonths(
-      String(dateFrom ?? '').slice(0, 7),
-      String(dateTo ?? '').slice(0, 7),
-    );
     const result: DisplayRow[] = [];
     let i = 0;
     while (i < baseRows.length) {
@@ -765,7 +759,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       result.push(
         ...regionRows.map((r) => ({ ...r, rowType: 'data' as const })),
       );
-      const sub = aggregateRows(regionRows, monthCount);
+      const sub = aggregateRows(regionRows);
       result.push({
         ...sub,
         region,
@@ -774,7 +768,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
         rowType: 'regionTotal',
       });
     }
-    const grand = aggregateRows(baseRows, monthCount);
+    const grand = aggregateRows(baseRows);
     result.push({
       ...grand,
       region: '整体合计',
@@ -783,7 +777,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       rowType: 'grandTotal',
     });
     return result;
-  }, [baseRows, dateFrom, dateTo]);
+  }, [baseRows]);
 
   const regionRatios = useMemo(() => {
     const map = new Map<string, { fee: number; sales: number }>();
@@ -960,9 +954,19 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
               }
             }
 
+            // 导出数字格式：比值 → %，金额/销额 → 2 位小数；数字单元格显式标 t:'n' 使格式生效
+            const numFmt =
+              col.format === formatPercent
+                ? '0.00%'
+                : col.format === formatCurrency
+                  ? '0.00'
+                  : undefined;
+
             return {
               v: isNumber ? raw : String(raw ?? ''),
-              ...(col.format === formatPercent ? { z: '0.00%' } : {}),
+              ...(isNumber
+                ? { t: 'n' as const, ...(numFmt ? { z: numFmt } : {}) }
+                : {}),
               s: {
                 ...baseCellStyle(),
                 fill: { fgColor: { rgb: warnHex ?? baseBg } },
@@ -999,7 +1003,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
               : baseBg;
             return {
               v: ratio !== null ? ratio : '',
-              ...(ratio !== null ? { z: '0.00%' } : {}),
+              ...(ratio !== null ? { z: '0.00%', t: 'n' as const } : {}),
               s: {
                 ...baseCellStyle(),
                 fill: { fgColor: { rgb: drillBg } },
@@ -1052,10 +1056,6 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
 
       // 若主表展开了下钻列，同步获取门店级月度明细
       const needStoreDrill = storeColumns.some((c) => c.drill && expanded[c.drill]);
-      const storeMonthCount = countMonths(
-        String(dateFrom ?? '').slice(0, 7),
-        String(dateTo ?? '').slice(0, 7),
-      );
       const storeMonthlyData: Record<DrillMetric, StoreMonthlyDrillData | null> = {
         paidPointFeeRatio: null,
         paidPointSalesRatio: null,
@@ -1086,7 +1086,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       }
 
       // 构建门店显示行：明细 + 人员合计 + 所别合计 + 部别合计
-      const storeDisplayRows = buildStoreDisplayRows(storeDetail.rows, storeMonthCount);
+      const storeDisplayRows = buildStoreDisplayRows(storeDetail.rows);
 
       const storeRows: ReportRow[] = [
         storeExportCols.map((ec) => {
@@ -1127,9 +1127,20 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
             const col = ec.col;
             const raw = row[col.key];
             const isNumber = typeof raw === 'number';
+
+            // 导出数字格式：比值 → %，金额/销额 → 2 位小数；数字单元格显式标 t:'n' 使格式生效
+            const numFmt =
+              col.format === formatPercent
+                ? '0.00%'
+                : col.format === formatCurrency
+                  ? '0.00'
+                  : undefined;
+
             return {
               v: isNumber ? raw : String(raw ?? ''),
-              ...(col.format === formatPercent ? { z: '0.00%' } : {}),
+              ...(isNumber
+                ? { t: 'n' as const, ...(numFmt ? { z: numFmt } : {}) }
+                : {}),
               s: {
                 ...baseCellStyle(),
                 fill: { fgColor: { rgb: baseBg } },
@@ -1169,7 +1180,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
               : baseBg;
             return {
               v: ratio !== null ? ratio : '',
-              ...(ratio !== null ? { z: '0.00%' } : {}),
+              ...(ratio !== null ? { z: '0.00%', t: 'n' as const } : {}),
               s: {
                 ...baseCellStyle(),
                 fill: { fgColor: { rgb: drillBg } },
@@ -1209,10 +1220,31 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
     }
   }, [visibleRows, exporting, dateFrom, dateTo, expanded, monthlyData, regionRatios, filters, thresholds]);
 
+  // 测量冻结列宽度：列结构、表格尺寸或表格首次挂载（数据到达后）时重新计算 sticky left 偏移
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    if (!table) return;
+    const measure = () => {
+      const headers = table.querySelectorAll('thead tr:first-child th');
+      if (headers.length < FROZEN_COLS) return;
+      const widths = Array.from(headers)
+        .slice(0, FROZEN_COLS)
+        .map((h) => h.getBoundingClientRect().width);
+      // 仅当测量到有效宽度时才更新，避免隐藏容器（display:none）测量出 0 导致列重叠
+      if (widths.every((w) => w > 0)) {
+        setFrozenColWidths(widths);
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(table);
+    return () => ro.disconnect();
+  }, [columns, expanded, baseRows.length > 0]);
+
   const isEmpty = baseRows.length === 0 && !loading && !error;
 
   return (
-    <div className={isEmpty ? '' : 'bg-card border border-border rounded-sm'}>
+    <div className={isEmpty ? '' : 'bg-card border border-border rounded-sm overflow-hidden'}>
       {loading ? (
         <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
           加载中...
@@ -1251,7 +1283,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
               <h3 className="text-sm font-bold text-foreground">ATP绩效</h3>
               <Button
@@ -1361,11 +1393,14 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
             }
           `}</style>
 
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-xs">
-              <thead className="sticky top-0 z-10">
-                <tr className="bg-accent/50">
-                  {columns.map((col) => {
+          <div
+            className="overflow-auto bg-card border border-border rounded-sm"
+            style={{ maxHeight: 'calc(100vh - 320px)' }}
+          >
+            <table ref={tableRef} className="w-full border-separate border-spacing-0 text-xs">
+              <thead>
+                <tr className="bg-accent">
+                {columns.map((col, ci) => {
                     const clickable = !!col.drill;
                     const isExpanded = col.drill ? expanded[col.drill] : false;
                     const isLoading = col.drill ? drillLoading[col.drill] : false;
@@ -1375,6 +1410,10 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                     const regionDetailActive = isRegionCol && expandRegionDetail;
                     const tierActive = isTierCol && collapseMode === 'tier';
                     const collapseActive = regionDetailActive || tierActive;
+                    const isFrozen = ci < FROZEN_COLS;
+                    const frozenLeft = isFrozen
+                      ? frozenColWidths.slice(0, ci).reduce((a, b) => a + b, 0)
+                      : undefined;
                     return (
                       <React.Fragment key={col.key}>
                         <th
@@ -1392,7 +1431,7 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                           }
                           onMouseLeave={() => setHoveredHeader(null)}
                           className={[
-                            'border-b border-r border-border px-2 py-2 text-left font-medium text-foreground h-11 align-middle leading-tight',
+                            'border-b border-r border-border px-2 py-2 text-center font-medium text-foreground h-11 align-middle leading-tight sticky top-0',
                             clickable || isCollapseHeader
                               ? 'cursor-pointer select-none'
                               : '',
@@ -1400,9 +1439,11 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                             isCollapseHeader ? 'hover:bg-[hsl(152,60%,90%)]' : '',
                           ].join(' ')}
                           style={{
+                            left: frozenLeft,
+                            zIndex: isFrozen ? 30 : 20,
                             backgroundColor: collapseActive
                               ? 'hsl(152, 60%, 90%)'
-                              : col.headerBg ?? undefined,
+                              : col.headerBg ?? FROZEN_HEADER_BG,
                           }}
                         >
                           <span
@@ -1436,7 +1477,8 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                           (monthlyData[col.drill]?.months ?? getLast6MonthsDesc(String(dateTo ?? '').slice(0, 7) || formatMonthStr(new Date())))).map((m) => (
                             <th
                               key={`${col.drill}-${m}`}
-                              className="border-b border-r border-border px-2 py-2 text-center font-medium text-foreground whitespace-nowrap bg-accent/30"
+                              className="border-b border-r border-border px-2 py-2 text-center font-medium text-foreground whitespace-nowrap bg-accent sticky top-0"
+                              style={{ zIndex: 20 }}
                             >
                               {formatMonthLabel(m)}
                             </th>
@@ -1468,13 +1510,17 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                       ].join(' ')}
                       style={{ backgroundColor: bgColor }}
                     >
-                      {columns.map((col) => {
+                      {columns.map((col, ci) => {
                         const raw = row[col.key];
                         const text =
                           typeof raw === 'number' && col.format
                             ? col.format(raw)
                             : String(raw ?? '');
                         const isNumber = typeof raw === 'number';
+                        const isFrozen = ci < FROZEN_COLS;
+                        const frozenLeft = isFrozen
+                          ? frozenColWidths.slice(0, ci).reduce((a, b) => a + b, 0)
+                          : undefined;
 
                         let mainBg: string | undefined;
                         if (row.rowType === 'data') {
@@ -1502,10 +1548,12 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
                         return (
                           <React.Fragment key={col.key}>
                             <td
-                              className={`border-b border-r border-border px-2 py-1 text-foreground whitespace-nowrap ${isNumber ? 'font-mono tabular-nums' : ''}`}
+                              className={`border-b border-r border-border px-2 py-1 text-foreground whitespace-nowrap ${isNumber ? 'font-mono tabular-nums' : ''} ${isFrozen ? 'sticky' : ''}`}
                               style={{
+                                left: frozenLeft,
+                                zIndex: isFrozen ? 25 : undefined,
                                 textAlign: col.align ?? 'left',
-                                backgroundColor: mainBg,
+                                backgroundColor: mainBg ?? (isFrozen ? bgColor : undefined),
                               }}
                             >
                               {text}
