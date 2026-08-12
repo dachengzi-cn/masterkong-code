@@ -34,6 +34,7 @@ const AtpExpensePage = lazy(() => import('@/pages/AtpExpensePage/AtpExpensePage'
 const OverstockPage = lazy(() => import('@/pages/OverstockPage/OverstockPage'));
 const ServiceAnalysisPage = lazy(() => import('@/pages/ServiceAnalysisPage/ServiceAnalysisPage'));
 const CapabilityPage = lazy(() => import('@/pages/CapabilityPage/CapabilityPage'));
+const DbTablePage = lazy(() => import('@/pages/DbTablePage/DbTablePage'));
 
 export interface SheetItem {
   id: string;
@@ -94,6 +95,8 @@ function SheetContent({ path }: { path: string }) {
         return wrap(<ServiceAnalysisPage />);
       case '/capability':
         return wrap(<CapabilityPage />);
+      case '/db-table':
+        return wrap(<DbTablePage />);
       default:
         return (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

@@ -16,6 +16,7 @@ import { AiAnalysisModule } from './modules/ai-analysis/ai-analysis.module';
 import { DocGenModule } from './modules/doc-gen/doc-gen.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { CapabilityModule } from './modules/capability/capability.module';
+import { DbTableModule } from './modules/db-table/db-table.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { CapabilityModule } from './modules/capability/capability.module';
     DocGenModule,
     ReportsModule,
     CapabilityModule,
+    DbTableModule,
     // ====== @route-section: business-modules END ======
 
     // ️ @route-order: last

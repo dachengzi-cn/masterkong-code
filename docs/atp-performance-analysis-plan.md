@@ -33,8 +33,9 @@ ATP（Activation / Trade Promotion）费用分析用于评估门店付费点位�
 
 | 来源 | 表/工作表 | 作用 |
 | --- | --- | --- |
-| 客户资料 | `customer_profile` | 门店主数据：所别、阶层、业代、总点数、付费点数、付费金额 |
+| 客户资料 | `customer_profile` | 门店主数据：所别、阶层、业代、总点数、付费点数 |
 | 费用资料 | `expense_profile`（`sheetType = '客户销额'`） | 客户编码维度的门店销额 |
+| 费用资料 | `expense_profile`（`sheetType = 'ATP费用'`） | 付费金额唯一来源（`计划付费金额`） |
 
 ### 2.2 关联键
 
@@ -58,8 +59,8 @@ ATP（Activation / Trade Promotion）费用分析用于评估门店付费点位�
 | 字段 | 来源 | 说明 |
 | --- | --- | --- |
 | `totalPoints` | 客户资料 `总点数` | 门店总点数，默认 1 |
-| `paidPoints` | 客户资料 `付费点数`；若为空则 `付费金额 > 0 ? 1 : 0` | 实际付费点数 |
-| `paidAmount` | 客户资料 `付费金额` | ATP 投入金额 |
+| `paidPoints` | 客户资料 `付费点数`；若为空则 `付费金额 > 0 ? 1 : 0` | 实际付费点数；「付费金额」判断基于费用资料（ATP费用） |
+| `paidAmount` | 费用资料（`sheetType = 'ATP费用'`）`计划付费金额` ÷ 3 | ATP 投入金额，付费金额唯一来源为费用资料 |
 | `totalStoreSales` | 费用资料「客户销额」合计 | 时间区间内该客户总销额 |
 | `paidStoreSales` | 若 `paidAmount > 0` 则等于 `totalStoreSales`，否则为 0 | 付费门店的销额 |
 

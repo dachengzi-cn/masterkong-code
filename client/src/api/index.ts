@@ -9,3 +9,4 @@ export * as expenseApi from './expense';
 export * as aiConfigApi from './ai-config';
 export * as reportApi from './report';
 export * as capabilityApi from './capability';
+export * as dbTableApi from './db-table';

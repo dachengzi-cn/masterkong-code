@@ -20,6 +20,7 @@ const ExpiryExpensePage = lazy(() => import('./pages/ExpiryExpensePage/ExpiryExp
 const AtpExpensePage = lazy(() => import('./pages/AtpExpensePage/AtpExpensePage'));
 const OverstockPage = lazy(() => import('./pages/OverstockPage/OverstockPage'));
 const CapabilityPage = lazy(() => import('./pages/CapabilityPage/CapabilityPage'));
+const DbTablePage = lazy(() => import('./pages/DbTablePage/DbTablePage'));
 
 const RoutesComponent = () => {
   return (
@@ -42,6 +43,7 @@ const RoutesComponent = () => {
         <Route path="expense/overstock" element={<Suspense fallback={<PageLoader />}><OverstockPage /></Suspense>} />
         <Route path="service-analysis" element={<Suspense fallback={<PageLoader />}><ServiceAnalysisPage /></Suspense>} />
         <Route path="capability" element={<Suspense fallback={<PageLoader />}><CapabilityPage /></Suspense>} />
+        <Route path="db-table" element={<Suspense fallback={<PageLoader />}><DbTablePage /></Suspense>} />
         <Route path="expiry-expense" element={<Navigate to="/expense/expiry" replace />} />
         <Route path="atp-expense" element={<Navigate to="/expense/atp" replace />} />
       </Route>

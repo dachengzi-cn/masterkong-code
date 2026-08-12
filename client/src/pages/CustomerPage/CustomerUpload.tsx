@@ -59,9 +59,25 @@ function mapColumnHeader(header: string): string | null {
   return null;
 }
 
+/** 付费金额列名黑名单：此类列不再被导入，付费金额唯一来源为费用资料（ATP费用 sheet） */
+const PAID_AMOUNT_COLUMN_NAMES = ['付费金额', '付费金额(元)', '付费金额（元）', '付费金额/元', '付费金额元'];
+
+function isPaidAmountColumn(header: string): boolean {
+  const trimmed = header.trim();
+  return PAID_AMOUNT_COLUMN_NAMES.some(
+    (name) => trimmed === name || trimmed.replace(/\s/g, '') === name.replace(/\s/g, ''),
+  );
+}
+
+interface ParseCustomerResult {
+  customers: CustomerProfile[];
+  fileName: string;
+  ignoredPaidAmountColumns: string[];
+}
+
 function parseCustomerExcel(
   file: File,
-): Promise<{ customers: CustomerProfile[]; fileName: string }> {
+): Promise<ParseCustomerResult> {
   return import('xlsx-js-style').then((XLSX) => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -91,11 +107,15 @@ function parseCustomerExcel(
         const rawHeaders = rows[0].map((v: unknown) => String(v ?? '').trim());
         const columnMap: Array<{ index: number; field: string }> = [];
         const extraColumns: Array<{ index: number; name: string }> = [];
+        const ignoredPaidAmountColumns: string[] = [];
 
         rawHeaders.forEach((h: string, i: number) => {
           const mapped = mapColumnHeader(h);
           if (mapped) {
             columnMap.push({ index: i, field: mapped });
+          } else if (isPaidAmountColumn(h)) {
+            // 付费金额列不导入系统：过滤并记录，由调用方提示用户
+            ignoredPaidAmountColumns.push(h.trim());
           } else if (h) {
             extraColumns.push({ index: i, name: h });
           }
@@ -136,7 +156,7 @@ function parseCustomerExcel(
           reject(new Error('未解析到有效的客户数据'));
           return;
         }
-        resolve({ customers, fileName: file.name });
+        resolve({ customers, fileName: file.name, ignoredPaidAmountColumns });
       } catch (err) {
         reject(err);
       }
@@ -190,6 +210,12 @@ const CustomerUpload = React.forwardRef<HTMLInputElement, CustomerUploadProps>((
       const result = await parseCustomerExcel(file);
       setParsedData({ customers: result.customers, fileName: file.name });
       toast.success(`解析成功，共 ${result.customers.length} 条客户数据`);
+      if (result.ignoredPaidAmountColumns.length > 0) {
+        toast.warning(
+          `已忽略「${result.ignoredPaidAmountColumns.join('、')}」列：付费金额不再从客户资料导入，统一以费用资料（ATP费用）为准`,
+          { duration: 6000 },
+        );
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '文件解析失败';
       toast.error(msg);
@@ -318,9 +344,6 @@ const CustomerUpload = React.forwardRef<HTMLInputElement, CustomerUploadProps>((
                       <th className="whitespace-nowrap px-3 py-2 font-medium text-foreground">
                         合作状态
                       </th>
-                      <th className="whitespace-nowrap px-3 py-2 font-medium text-foreground">
-                        付费金额
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -349,9 +372,6 @@ const CustomerUpload = React.forwardRef<HTMLInputElement, CustomerUploadProps>((
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-foreground">
                           {String(row.extras?.['合作状态'] ?? '')}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-foreground">
-                          {String(row.extras?.['付费金额'] ?? '')}
                         </td>
                       </tr>
                     ))}

@@ -66,6 +66,7 @@ const EXPENSE_SUB_ITEMS = [
 const FOOTER_NAV_ITEMS = [
   { path: '/data', label: '数据管理', icon: '🗄️', labelClass: 'font-extrabold text-[#c8dd5f]' },
   { path: '/customer-list', label: '客户列表', icon: '📋', labelClass: 'font-extrabold text-[#95e599]' },
+  { path: '/db-table', label: '数据库文档', icon: '🗃️', labelClass: 'font-extrabold text-[#8ecae6]' },
 ];
 
 

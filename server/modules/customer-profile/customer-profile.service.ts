@@ -61,6 +61,14 @@ interface InMemoryRecord {
   _updated_by: string;
 }
 
+/** 分类汇总所需的客户记录（内存/DB 两种模式统一使用） */
+interface ClassificationRecord {
+  customerCode: string;
+  region: string;
+  tier: string;
+  extras: Record<string, unknown>;
+}
+
 @Injectable()
 export class CustomerProfileService implements OnModuleInit {
   private readonly logger = new Logger(CustomerProfileService.name);
@@ -77,6 +85,67 @@ export class CustomerProfileService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.verifyDatabase();
+    await this.validatePaidAmountConsistency();
+  }
+
+  /**
+   * 付费金额数据一致性校验。
+   *
+   * 付费金额唯一来源为费用资料（expense_profile 中 sheetType='ATP费用' 的「计划付费金额」）。
+   * 本方法校验费用资料引用数据的可用性与准确性，在服务启动时及客户总览加载（getClassification）
+   * 时执行，确保各业务模块展示/计算的付费金额与费用资料保持一致。
+   */
+  private async validatePaidAmountConsistency(): Promise<void> {
+    if (!DatasetService._instance) return;
+    try {
+      const summary = await DatasetService._instance.getAtpLatestMonthPaidMap();
+      if (summary === null) {
+        this.logger.warn(
+          '[数据一致性校验] 费用资料中未找到 sheetType=ATP费用 的记录，付费金额数据缺失，各模块付费指标统一为 0',
+        );
+        return;
+      }
+      let invalidCount = 0;
+      const invalidCodes: string[] = [];
+      for (const [code, amount] of summary.paidMap) {
+        if (!Number.isFinite(amount)) {
+          invalidCount++;
+          if (invalidCodes.length < 5) invalidCodes.push(code);
+        }
+      }
+      if (invalidCount > 0) {
+        this.logger.warn(
+          `[数据一致性校验] 费用资料 ATP费用 中存在 ${invalidCount} 条无效付费金额记录（客户编码：${invalidCodes.join('、')}...）`,
+        );
+      } else {
+        this.logger.log(
+          `[数据一致性校验] 通过：费用资料 ATP费用 付费金额数据有效，覆盖 ${summary.paidMap.size} 个客户，最新月份 ${summary.month}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`[数据一致性校验] 执行失败: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * 付费金额相关 extras 键黑名单：客户资料上传时一律过滤。
+   * 付费金额唯一来源为费用资料（expense_profile 中 sheetType='ATP费用' 的「计划付费金额」）。
+   */
+  private static readonly PAID_AMOUNT_EXTRA_KEYS = [
+    '付费金额', '付费金额(元)', '付费金额（元）', '付费金额/元', '付费金额元',
+  ];
+
+  private sanitizeExtras(extrasObj: Record<string, unknown>): Record<string, unknown> {
+    const sanitized: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(extrasObj)) {
+      const key = String(k).trim();
+      if (CustomerProfileService.PAID_AMOUNT_EXTRA_KEYS.includes(key)) continue;
+      if (v === undefined || v === null) sanitized[key] = '';
+      else if (v instanceof Date) sanitized[key] = v.toISOString();
+      else if (typeof v === 'object') sanitized[key] = JSON.stringify(v);
+      else sanitized[key] = String(v);
+    }
+    return sanitized;
   }
 
   private async verifyDatabase(): Promise<void> {
@@ -302,13 +371,7 @@ export class CustomerProfileService implements OnModuleInit {
         if (!code) continue;
         const existing = this.memoryStore.get(code);
         const extrasObj = (c.extras ?? {}) as Record<string, unknown>;
-        const sanitizedExtras: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(extrasObj)) {
-          if (v === undefined || v === null) sanitizedExtras[k] = '';
-          else if (v instanceof Date) sanitizedExtras[k] = v.toISOString();
-          else if (typeof v === 'object') sanitizedExtras[k] = JSON.stringify(v);
-          else sanitizedExtras[k] = String(v);
-        }
+        const sanitizedExtras = this.sanitizeExtras(extrasObj);
         if (existing) {
           existing.customerName = String(c.customerName ?? '').trim();
           existing.region = String(c.region ?? '').trim();
@@ -352,13 +415,7 @@ export class CustomerProfileService implements OnModuleInit {
           const region = String(c.region ?? '').trim();
           const tier = String(c.tier ?? '').trim();
           const extrasObj = (c.extras ?? {}) as Record<string, unknown>;
-          const sanitizedExtras: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(extrasObj)) {
-            if (v === undefined || v === null) sanitizedExtras[k] = '';
-            else if (v instanceof Date) sanitizedExtras[k] = v.toISOString();
-            else if (typeof v === 'object') sanitizedExtras[k] = JSON.stringify(v);
-            else sanitizedExtras[k] = String(v);
-          }
+          const sanitizedExtras = this.sanitizeExtras(extrasObj);
           return {
             customerCode: code,
             customerName: name,
@@ -554,177 +611,170 @@ export class CustomerProfileService implements OnModuleInit {
   }
 
   async getClassification(): Promise<GetClassificationResponse> {
+    // ── 统一数据源：付费相关指标一律引用 ATP 费用分析系统 ──
+    // 通过 DatasetService（ATP 费用分析系统数据服务）获取「最新可用月份」及其各门店付费金额映射，
+    // 口径与 ATP 绩效分析完全一致（expense_profile 中 sheetType='ATP费用'，计划付费金额÷3 分摊至 3 个月）。
+    const atpSummary = DatasetService._instance
+      ? await DatasetService._instance.getAtpLatestMonthPaidMap()
+      : null;
+    const atpPaidMap = atpSummary?.paidMap ?? new Map<string, number>();
+    const paidPeriod = atpSummary?.month ?? null;
+    const hasAtpData = atpSummary !== null;
+
+    // 数据校验：无 ATP 费用数据时输出告警，付费指标统一为 0
+    if (!hasAtpData) {
+      this.logger.warn(
+        '[数据校验] expense_profile 中未找到 sheetType=ATP费用 的记录，客户总览付费门店数/付费金额统一显示为 0',
+      );
+    }
+
+    // 获取客户记录（内存模式直接读取；DB 模式按客户编码明细查询，付费在 JS 侧统一按 ATP map 计算）
+    let records: ClassificationRecord[];
     if (this.useMemoryStorage) {
-      const records = Array.from(this.memoryStore.values());
-
-      // 按 (region, tier, customerManager) 分组汇总，每个业代一行
-      const personMap = new Map<string, {
-        region: string; tier: string; customerManager: string;
-        storeCount: number; paidStoreCount: number; paidAmount: number;
-      }>();
-      const regionMap = new Map<string, { storeCount: number; paidStoreCount: number; paidAmount: number }>();
-      const tierMap = new Map<string, { storeCount: number; paidStoreCount: number; paidAmount: number }>();
-      let totalStoreCount = 0, totalPaidStoreCount = 0, totalPaidAmount = 0;
-
-      for (const r of records) {
-        const customerManager = String(r.extras['客户经理'] ?? '').trim();
-        const paidAmountStr = String(r.extras['付费金额'] ?? '').trim();
-        const paidAmount = paidAmountStr && !isNaN(parseFloat(paidAmountStr)) ? parseFloat(paidAmountStr) : 0;
-        const paidStoreCount = paidAmount > 0 ? 1 : 0;
-
-        totalStoreCount++;
-        totalPaidStoreCount += paidStoreCount;
-        totalPaidAmount += paidAmount;
-
-        // 人员聚合：每个 (区域, 层级, 业代) 一行
-        const personKey = `${r.region}||${r.tier}||${customerManager}`;
-        const personEntry = personMap.get(personKey) ?? {
-          region: r.region, tier: r.tier, customerManager,
-          storeCount: 0, paidStoreCount: 0, paidAmount: 0,
-        };
-        personEntry.storeCount++;
-        personEntry.paidStoreCount += paidStoreCount;
-        personEntry.paidAmount += paidAmount;
-        personMap.set(personKey, personEntry);
-
-        // 区域/层级聚合
-        for (const [key, map] of [[r.region, regionMap], [r.tier, tierMap]] as const) {
-          const entry = map.get(key) ?? { storeCount: 0, paidStoreCount: 0, paidAmount: 0 };
-          entry.storeCount++;
-          entry.paidStoreCount += paidStoreCount;
-          entry.paidAmount += paidAmount;
-          map.set(key, entry);
-        }
+      records = Array.from(this.memoryStore.values());
+    } else {
+      try {
+        const result = await this.db.execute(
+          sql.raw(
+            'SELECT region, tier, customer_code, ' +
+            "COALESCE(extras->>'客户经理', '') as customer_manager, " +
+            "COALESCE(extras->>'经销商类型', '') as dealer_type " +
+            'FROM customer_profile',
+          ),
+        );
+        records = (result as unknown as Array<{
+          region: string; tier: string; customer_code: string;
+          customer_manager: string; dealer_type: string;
+        }>).map((r) => ({
+          customerCode: r.customer_code,
+          region: r.region,
+          tier: r.tier,
+          extras: {
+            '客户经理': r.customer_manager,
+            '经销商类型': r.dealer_type,
+          },
+        }));
+      } catch (err) {
+        this.logger.warn(`getClassification 数据库失败，切换到内存: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getClassification();
       }
-
-      // 转换为 rows —— 每行一个业代，按区域/层级/业代排序
-      const rows: ClassificationRow[] = Array.from(personMap.values())
-        .map((p) => ({
-          region: p.region,
-          tier: p.tier,
-          customerManager: p.customerManager,
-          storeCount: p.storeCount,
-          paidStoreCount: p.paidStoreCount,
-          paidAmount: Math.round(p.paidAmount * 100) / 100,
-        }))
-        .sort((a, b) => a.region.localeCompare(b.region)
-          || a.tier.localeCompare(b.tier)
-          || a.customerManager.localeCompare(b.customerManager));
-
-      // 一阶门店形态分布
-      const simplify = (val: string) => DEALER_TYPE_TO_FORMAT[val] ?? val;
-      const formatMap = new Map<string, Map<string, number>>();
-      for (const r of records) {
-        if (r.tier !== '一阶') continue;
-        const simpleType = simplify(String(r.extras['经销商类型'] ?? '').trim());
-        const regionData = formatMap.get(r.region) ?? new Map<string, number>();
-        regionData.set(simpleType, (regionData.get(simpleType) ?? 0) + 1);
-        formatMap.set(r.region, regionData);
-      }
-      const storeFormatSummary: StoreFormatItem[] = [];
-      for (const [reg, typeMap] of formatMap) {
-        for (const [simpleType, cnt] of typeMap) {
-          storeFormatSummary.push({ region: reg, simpleType, storeCount: cnt });
-        }
-      }
-
-      return {
-        rows,
-        regionSummary: Array.from(regionMap.entries()).map(([region, v]) => ({
-          region, ...v, paidAmount: Math.round(v.paidAmount * 100) / 100,
-        })),
-        tierSummary: Array.from(tierMap.entries()).map(([tier, v]) => ({
-          tier, ...v, paidAmount: Math.round(v.paidAmount * 100) / 100,
-        })),
-        totalStoreCount, totalPaidStoreCount,
-        totalPaidAmount: Math.round(totalPaidAmount * 100) / 100,
-        storeFormatSummary,
-      };
     }
-    try {
-      const detailSql =
-        "SELECT region, tier, COALESCE(extras->>'客户经理', '') as customer_manager, " +
-        "count(*) as store_count, " +
-        "count(*) FILTER (WHERE extras->>'付费金额' IS NOT NULL AND extras->>'付费金额' != '') as paid_store_count, " +
-        "COALESCE(sum(CASE WHEN extras->>'付费金额' IS NOT NULL AND extras->>'付费金额' != '' " +
-        "AND extras->>'付费金额' ~ '^[0-9]+(\\.[0-9]+)?$' " +
-        "THEN (extras->>'付费金额')::numeric ELSE 0 END), 0) as paid_amount " +
-        "FROM customer_profile " +
-        "GROUP BY region, tier, extras->>'客户经理' " +
-        "ORDER BY region, tier, customer_manager";
-      const formatSql =
-        "SELECT region, COALESCE(extras->>'经销商类型', '') as dealer_type, count(*) as store_count " +
-        "FROM customer_profile WHERE tier = '一阶' " +
-        "GROUP BY region, extras->>'经销商类型'";
-      const [detailResult, formatResult] = await Promise.all([
-        this.db.execute(sql.raw(detailSql)),
-        this.db.execute(sql.raw(formatSql)),
-      ]);
-      const rows: ClassificationRow[] = (detailResult as unknown as Array<{
-        region: string; tier: string; customer_manager: string;
-        store_count: string; paid_store_count: string; paid_amount: string;
-      }>).map((r) => {
-        const sc = parseInt(r.store_count, 10);
-        const psc = parseInt(r.paid_store_count, 10);
-        const pa = parseFloat(r.paid_amount);
-        return {
-          region: r.region, tier: r.tier, customerManager: r.customer_manager,
-          storeCount: isNaN(sc) ? 0 : sc,
-          paidStoreCount: isNaN(psc) ? 0 : psc,
-          paidAmount: isNaN(pa) ? 0 : Math.round(pa * 100) / 100,
-        };
-      });
 
-      const regionMap = new Map<string, { storeCount: number; paidStoreCount: number; paidAmount: number }>();
-      const tierMap = new Map<string, { storeCount: number; paidStoreCount: number; paidAmount: number }>();
-      let totalStoreCount = 0, totalPaidStoreCount = 0, totalPaidAmount = 0;
-      for (const row of rows) {
-        totalStoreCount += row.storeCount;
-        totalPaidStoreCount += row.paidStoreCount;
-        totalPaidAmount += row.paidAmount;
-        for (const [key, map] of [[row.region, regionMap], [row.tier, tierMap]] as const) {
-          const entry = map.get(key) ?? { storeCount: 0, paidStoreCount: 0, paidAmount: 0 };
-          entry.storeCount += row.storeCount;
-          entry.paidStoreCount += row.paidStoreCount;
-          entry.paidAmount += row.paidAmount;
-          map.set(key, entry);
-        }
-      }
+    // 付费指标（付费门店数 / 付费金额）统一按 atpPaidMap 计算，不再读取客户资料中的「付费金额」字段
+    const aggregated = this.aggregateClassification(records, atpPaidMap);
 
-      const formatRaw = formatResult as unknown as Array<{ region: string; dealer_type: string; store_count: string }>;
-      const formatMap = new Map<string, Map<string, number>>();
-      for (const raw of formatRaw) {
-        const simpleType = DEALER_TYPE_TO_FORMAT[raw.dealer_type] ?? (raw.dealer_type || '其他');
-        const regionData = formatMap.get(raw.region) ?? new Map<string, number>();
-        const cnt = parseInt(raw.store_count, 10);
-        regionData.set(simpleType, (regionData.get(simpleType) ?? 0) + (isNaN(cnt) ? 0 : cnt));
-        formatMap.set(raw.region, regionData);
-      }
-      const storeFormatSummary: StoreFormatItem[] = [];
-      for (const [region, typeMap] of formatMap) {
-        for (const [simpleType, cnt] of typeMap) {
-          storeFormatSummary.push({ region, simpleType, storeCount: cnt });
-        }
-      }
-      storeFormatSummary.sort((a, b) => a.region.localeCompare(b.region) || b.storeCount - a.storeCount);
+    return {
+      ...aggregated,
+      paidDataSource: 'atp',
+      paidPeriod,
+      hasAtpData,
+    };
+  }
 
-      return {
-        rows,
-        regionSummary: Array.from(regionMap.entries()).map(([region, v]) => ({
-          region, ...v, paidAmount: Math.round(v.paidAmount * 100) / 100,
-        })),
-        tierSummary: Array.from(tierMap.entries()).map(([tier, v]) => ({
-          tier, ...v, paidAmount: Math.round(v.paidAmount * 100) / 100,
-        })),
-        totalStoreCount, totalPaidStoreCount,
-        totalPaidAmount: Math.round(totalPaidAmount * 100) / 100,
-        storeFormatSummary,
+  /**
+   * 聚合分类汇总。付费指标（paidStoreCount / paidAmount）统一按 atpPaidMap 计算，
+   * 付费金额唯一来源为费用资料（expense_profile 中 sheetType='ATP费用'）。
+   */
+  private aggregateClassification(
+    records: ClassificationRecord[],
+    atpPaidMap: Map<string, number>,
+  ): {
+    rows: ClassificationRow[];
+    regionSummary: GetClassificationResponse['regionSummary'];
+    tierSummary: GetClassificationResponse['tierSummary'];
+    storeFormatSummary: StoreFormatItem[];
+    totalStoreCount: number;
+    totalPaidStoreCount: number;
+    totalPaidAmount: number;
+  } {
+    // 客户编码统一为 ATP 费用分析系统的标准格式，确保与 atpPaidMap 键一致
+    const normalizeCode = (code: string) =>
+      DatasetService._instance?.normalizeAtpCustomerCode(code) ?? String(code ?? '').trim();
+
+    // 按 (region, tier, customerManager) 分组汇总，每个业代一行
+    const personMap = new Map<string, {
+      region: string; tier: string; customerManager: string;
+      storeCount: number; paidStoreCount: number; paidAmount: number;
+    }>();
+    const regionMap = new Map<string, { storeCount: number; paidStoreCount: number; paidAmount: number }>();
+    const tierMap = new Map<string, { storeCount: number; paidStoreCount: number; paidAmount: number }>();
+    let totalStoreCount = 0, totalPaidStoreCount = 0, totalPaidAmount = 0;
+
+    for (const r of records) {
+      const customerManager = String(r.extras['客户经理'] ?? '').trim();
+      const paidAmount = atpPaidMap.get(normalizeCode(String(r.customerCode ?? '').trim())) ?? 0;
+      const paidStoreCount = paidAmount > 0 ? 1 : 0;
+
+      totalStoreCount++;
+      totalPaidStoreCount += paidStoreCount;
+      totalPaidAmount += paidAmount;
+
+      // 人员聚合：每个 (区域, 层级, 业代) 一行
+      const personKey = `${r.region}||${r.tier}||${customerManager}`;
+      const personEntry = personMap.get(personKey) ?? {
+        region: r.region, tier: r.tier, customerManager,
+        storeCount: 0, paidStoreCount: 0, paidAmount: 0,
       };
-    } catch (err) {
-      this.logger.warn(`getClassification 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getClassification();
+      personEntry.storeCount++;
+      personEntry.paidStoreCount += paidStoreCount;
+      personEntry.paidAmount += paidAmount;
+      personMap.set(personKey, personEntry);
+
+      // 区域/层级聚合
+      for (const [key, map] of [[r.region, regionMap], [r.tier, tierMap]] as const) {
+        const entry = map.get(key) ?? { storeCount: 0, paidStoreCount: 0, paidAmount: 0 };
+        entry.storeCount++;
+        entry.paidStoreCount += paidStoreCount;
+        entry.paidAmount += paidAmount;
+        map.set(key, entry);
+      }
     }
+
+    // 转换为 rows —— 每行一个业代，按区域/层级/业代排序
+    const rows: ClassificationRow[] = Array.from(personMap.values())
+      .map((p) => ({
+        region: p.region,
+        tier: p.tier,
+        customerManager: p.customerManager,
+        storeCount: p.storeCount,
+        paidStoreCount: p.paidStoreCount,
+        paidAmount: Math.round(p.paidAmount * 100) / 100,
+      }))
+      .sort((a, b) => a.region.localeCompare(b.region)
+        || a.tier.localeCompare(b.tier)
+        || a.customerManager.localeCompare(b.customerManager));
+
+    // 一阶门店形态分布
+    const simplify = (val: string) => DEALER_TYPE_TO_FORMAT[val] ?? val;
+    const formatMap = new Map<string, Map<string, number>>();
+    for (const r of records) {
+      if (r.tier !== '一阶') continue;
+      const simpleType = simplify(String(r.extras['经销商类型'] ?? '').trim());
+      const regionData = formatMap.get(r.region) ?? new Map<string, number>();
+      regionData.set(simpleType, (regionData.get(simpleType) ?? 0) + 1);
+      formatMap.set(r.region, regionData);
+    }
+    const storeFormatSummary: StoreFormatItem[] = [];
+    for (const [reg, typeMap] of formatMap) {
+      for (const [simpleType, cnt] of typeMap) {
+        storeFormatSummary.push({ region: reg, simpleType, storeCount: cnt });
+      }
+    }
+    storeFormatSummary.sort((a, b) => a.region.localeCompare(b.region) || b.storeCount - a.storeCount);
+
+    return {
+      rows,
+      regionSummary: Array.from(regionMap.entries()).map(([region, v]) => ({
+        region, ...v, paidAmount: Math.round(v.paidAmount * 100) / 100,
+      })),
+      tierSummary: Array.from(tierMap.entries()).map(([tier, v]) => ({
+        tier, ...v, paidAmount: Math.round(v.paidAmount * 100) / 100,
+      })),
+      totalStoreCount, totalPaidStoreCount,
+      totalPaidAmount: Math.round(totalPaidAmount * 100) / 100,
+      storeFormatSummary,
+    };
   }
 
   async getFormatDrilldown(region: string): Promise<FormatDrilldownResponse> {

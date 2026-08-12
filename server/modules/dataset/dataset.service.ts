@@ -1421,6 +1421,11 @@ export class DatasetService implements OnModuleInit {
       // 1) 从内存客户资料构建业代分组
       const allProfiles = this.customerProfileService.getAllProfiles();
 
+      // 付费金额唯一来源为费用资料（ATP费用 sheet）；仅当启用 isPaid 过滤时获取付费客户集合
+      const atpPaidCodes = filters?.isPaid && filters.isPaid.length > 0
+        ? await this.getAtpPaidCustomerCodeSet()
+        : new Set<string>();
+
       // 根据 sheetType 推断 tier：一阶订单/一阶回单 → 一阶，二阶订单/二阶回单 → 二阶
       let inferredTier: string | undefined;
       if (!filters?.tier || filters.tier.length === 0) {
@@ -1451,11 +1456,11 @@ export class DatasetService implements OnModuleInit {
           if (dt === '自售' || dt === '特约士多批' || dt === '特约特通批') return false;
         }
         if (filters?.isPaid && filters.isPaid.length > 0) {
-          const paid = p.extras?.['付费金额'];
+          const isPaidCustomer = atpPaidCodes.has(this.normalizeAtpCustomerCode(String(p.customerCode ?? '').trim()));
           const hasPaid = filters.isPaid.includes('true');
           const hasUnpaid = filters.isPaid.includes('false');
-          if (hasPaid && !hasUnpaid && (!paid || paid === '')) return false;
-          if (!hasPaid && hasUnpaid && (paid && paid !== '')) return false;
+          if (hasPaid && !hasUnpaid && !isPaidCustomer) return false;
+          if (!hasPaid && hasUnpaid && isPaidCustomer) return false;
         }
         if (filters?.customerKeyword) {
           const kw = filters.customerKeyword.toLowerCase();
@@ -1900,12 +1905,19 @@ export class DatasetService implements OnModuleInit {
         profileConditions.push("extras->>'经销商类型' NOT IN ('自售', '特约士多批', '特约特通批')");
       }
       if (filters?.isPaid && filters.isPaid.length > 0) {
+        // 付费金额唯一来源为费用资料（ATP费用 sheet），isPaid 过滤基于付费客户编码集合
+        const paidSet = await this.getAtpPaidCustomerCodeSet();
         const hasPaid = filters.isPaid.includes('true');
         const hasUnpaid = filters.isPaid.includes('false');
-        if (hasPaid && !hasUnpaid) {
-          profileConditions.push("extras->>'付费金额' IS NOT NULL AND extras->>'付费金额' != ''");
-        } else if (!hasPaid && hasUnpaid) {
-          profileConditions.push("(extras->>'付费金额' IS NULL OR extras->>'付费金额' = '')");
+        if (paidSet.size > 0) {
+          const paidCodes = Array.from(paidSet).map((c) => "'" + c.replace(/'/g, "''") + "'").join(',');
+          if (hasPaid && !hasUnpaid) {
+            profileConditions.push('customer_code IN (' + paidCodes + ')');
+          } else if (!hasPaid && hasUnpaid) {
+            profileConditions.push('customer_code NOT IN (' + paidCodes + ')');
+          }
+        } else if (hasPaid && !hasUnpaid) {
+          profileConditions.push('1 = 0');
         }
       }
       if (filters?.customerKeyword) {
@@ -2286,7 +2298,7 @@ export class DatasetService implements OnModuleInit {
       return this.getBrandSpecStatsMemory(datasetId, dateFrom, dateTo, filters, dealDateFrom, dealDateTo);
     }
     try {
-      const profileWhere = this.buildProfileWhereClause(filters);
+      const profileWhere = await this.buildProfileWhereClause(filters);
       const profileSql = profileWhere
         ? `SELECT customer_code, COALESCE(extras->>'客户经理', '') as sales_rep, region, tier FROM customer_profile WHERE ${profileWhere}`
         : `SELECT customer_code, COALESCE(extras->>'客户经理', '') as sales_rep, region, tier FROM customer_profile`;
@@ -2483,6 +2495,11 @@ export class DatasetService implements OnModuleInit {
       // 1) 从内存客户资料构建业代分组
       const allProfiles = this.customerProfileService.getAllProfiles();
 
+      // 付费金额唯一来源为费用资料（ATP费用 sheet）；仅当启用 isPaid 过滤时获取付费客户集合
+      const atpPaidCodes = filters?.isPaid && filters.isPaid.length > 0
+        ? await this.getAtpPaidCustomerCodeSet()
+        : new Set<string>();
+
       // 根据 sheetType 推断 tier
       let inferredTier: string | undefined;
       if (!filters?.tier || filters.tier.length === 0) {
@@ -2508,11 +2525,11 @@ export class DatasetService implements OnModuleInit {
           if (allFullNames.length > 0 && !allFullNames.includes(dealerType) && !filters.dealerType.includes(dealerType)) return false;
         }
         if (filters?.isPaid && filters.isPaid.length > 0) {
-          const paid = p.extras?.['付费金额'];
+          const isPaidCustomer = atpPaidCodes.has(this.normalizeAtpCustomerCode(String(p.customerCode ?? '').trim()));
           const hasPaid = filters.isPaid.includes('true');
           const hasUnpaid = filters.isPaid.includes('false');
-          if (hasPaid && !hasUnpaid && (!paid || paid === '')) return false;
-          if (!hasPaid && hasUnpaid && (paid && paid !== '')) return false;
+          if (hasPaid && !hasUnpaid && !isPaidCustomer) return false;
+          if (!hasPaid && hasUnpaid && isPaidCustomer) return false;
         }
         if (filters?.customerKeyword) {
           const kw = filters.customerKeyword.toLowerCase();
@@ -2724,7 +2741,7 @@ export class DatasetService implements OnModuleInit {
     }
     try {
       // 1) 获取客户资料，找到该业代的所有客户编码
-      const profileWhere = this.buildProfileWhereClause({
+      const profileWhere = await this.buildProfileWhereClause({
         ...filters,
         salesRep: [salesRep],
         region: [region],
@@ -2978,7 +2995,7 @@ export class DatasetService implements OnModuleInit {
     }
   }
 
-  private buildProfileWhereClause(filters?: HeatmapFilterParams): string {
+  private async buildProfileWhereClause(filters?: HeatmapFilterParams): Promise<string> {
     // 不再强制要求客户经理非空，允许所有客户资料参与分析
     const profileConditions: string[] = [];
     if (filters?.region && filters.region.length > 0) {
@@ -3013,12 +3030,19 @@ export class DatasetService implements OnModuleInit {
       }
     }
     if (filters?.isPaid && filters.isPaid.length > 0) {
+      // 付费金额唯一来源为费用资料（ATP费用 sheet），isPaid 过滤基于付费客户编码集合
+      const paidSet = await this.getAtpPaidCustomerCodeSet();
       const hasPaid = filters.isPaid.includes('true');
       const hasUnpaid = filters.isPaid.includes('false');
-      if (hasPaid && !hasUnpaid) {
-        profileConditions.push("extras->>'付费金额' IS NOT NULL AND extras->>'付费金额' != ''");
-      } else if (!hasPaid && hasUnpaid) {
-        profileConditions.push("(extras->>'付费金额' IS NULL OR extras->>'付费金额' = '')");
+      if (paidSet.size > 0) {
+        const paidCodes = Array.from(paidSet).map((c) => "'" + c.replace(/'/g, "''") + "'").join(',');
+        if (hasPaid && !hasUnpaid) {
+          profileConditions.push('customer_code IN (' + paidCodes + ')');
+        } else if (!hasPaid && hasUnpaid) {
+          profileConditions.push('customer_code NOT IN (' + paidCodes + ')');
+        }
+      } else if (hasPaid && !hasUnpaid) {
+        profileConditions.push('1 = 0');
       }
     }
     if (filters?.customerKeyword) {
@@ -3050,6 +3074,11 @@ export class DatasetService implements OnModuleInit {
       // 1) 从内存客户资料获取所有客户并应用筛选条件
       const allProfiles = this.customerProfileService.getAllProfiles();
 
+      // 付费金额唯一来源为费用资料（ATP费用 sheet）；仅当启用 isPaid 过滤时获取付费客户集合
+      const atpPaidCodes = filters?.isPaid && filters.isPaid.length > 0
+        ? await this.getAtpPaidCustomerCodeSet()
+        : new Set<string>();
+
       // 根据 sheetType 推断 tier：一阶订单/一阶回单 → 一阶，二阶订单/二阶回单 → 二阶
       let inferredTier: string | undefined;
       if (!filters?.tier || filters.tier.length === 0) {
@@ -3080,11 +3109,11 @@ export class DatasetService implements OnModuleInit {
           if (dt === '自售' || dt === '特约士多批' || dt === '特约特通批') return false;
         }
         if (filters?.isPaid && filters.isPaid.length > 0) {
-          const paid = p.extras?.['付费金额'];
+          const isPaidCustomer = atpPaidCodes.has(this.normalizeAtpCustomerCode(String(p.customerCode ?? '').trim()));
           const hasPaid = filters.isPaid.includes('true');
           const hasUnpaid = filters.isPaid.includes('false');
-          if (hasPaid && !hasUnpaid && (!paid || paid === '')) return false;
-          if (!hasPaid && hasUnpaid && (paid && paid !== '')) return false;
+          if (hasPaid && !hasUnpaid && !isPaidCustomer) return false;
+          if (!hasPaid && hasUnpaid && isPaidCustomer) return false;
         }
         if (filters?.customerKeyword) {
           const kw = filters.customerKeyword.toLowerCase();
@@ -3266,7 +3295,7 @@ export class DatasetService implements OnModuleInit {
       return this.getUnconvertedStoresMemory(datasetId, dateFrom, dateTo, filters);
     }
     try {
-      const whereClause = this.buildProfileWhereClause(filters);
+      const whereClause = await this.buildProfileWhereClause(filters);
       const fields = await this.getDatasetFields(datasetId);
       let codeField = this.findCustomerCodeField(fields);
       let dateField = this.findDateField(fields);
@@ -4528,6 +4557,44 @@ export class DatasetService implements OnModuleInit {
     return atpPaidMap;
   }
 
+  /**
+   * ATP 费用分析系统官方数据服务入口（供客户总览等模块复用，避免各模块各自实现造成口径不一致）。
+   * 返回「最新可用月份」及该月份下各客户编码的付费金额映射：
+   *  - 数据源：expense_profile 中 sheetType = 'ATP费用' 的记录
+   *  - 单月费用 = 计划付费金额 ÷ 3（记录金额为三个月总费用），分摊至「执行开始日期」起的 3 个月
+   *  - 仅统计落在所选月份区间内的分摊额（此处区间 = 最新月份，与 ATP 页面选中单个最新月份口径一致）
+   * 无任何 ATP 费用记录时返回 null。
+   */
+  async getAtpLatestMonthPaidMap(): Promise<{ month: string; paidMap: Map<string, number> } | null> {
+    const expenses = await this.expenseProfileService.findAllUnpaginated();
+    let latestYm: string | null = null;
+    for (const e of expenses) {
+      if (String(e.sheetType ?? '').trim() !== 'ATP费用') continue;
+      const dateValue = String(e.extras?.['执行开始日期'] ?? '').trim();
+      const ym = dateValue ? this.parseAtpMonthStrict(dateValue) : null;
+      if (ym && (!latestYm || ym > latestYm)) latestYm = ym;
+    }
+    if (!latestYm) return null;
+    return { month: latestYm, paidMap: this.buildAtpPaidMap(expenses, latestYm, latestYm) };
+  }
+
+  /**
+   * 获取「付费客户」编码集合：数据源为费用资料（expense_profile 中 sheetType='ATP费用' 且 计划付费金额 > 0 的客户）。
+   * 付费金额唯一来源为费用资料，isPaid 过滤统一基于该集合判断，不再读取客户资料中的付费金额列。
+   */
+  private async getAtpPaidCustomerCodeSet(): Promise<Set<string>> {
+    const expenses = await this.expenseProfileService.findAllUnpaginated();
+    const paidSet = new Set<string>();
+    for (const e of expenses) {
+      if (String(e.sheetType ?? '').trim() !== 'ATP费用') continue;
+      const code = this.normalizeAtpCustomerCode(String(e.customerCode ?? '').trim());
+      if (!code) continue;
+      const amount = this.parseNumeric(e.extras?.['计划付费金额'] ?? 0);
+      if (amount > 0) paidSet.add(code);
+    }
+    return paidSet;
+  }
+
   /** ATP 绩效：以客户资料 + 费用资料（客户销额）按客户编码关联汇总 */
   async getAtpPerformance(
     dateFrom: string,
@@ -4812,7 +4879,8 @@ export class DatasetService implements OnModuleInit {
     return Number.isNaN(num) || !Number.isFinite(num) ? 0 : num;
   }
 
-  private normalizeAtpCustomerCode(code: string): string {
+  /** 将客户编码统一为 ATP 费用分析系统的标准格式（供 ATP 关联计算及客户总览等模块复用） */
+  public normalizeAtpCustomerCode(code: string): string {
     const trimmed = String(code ?? '').trim();
     if (/^1201\//i.test(trimmed)) return trimmed;
     if (/^KH\d+/i.test(trimmed)) return trimmed;

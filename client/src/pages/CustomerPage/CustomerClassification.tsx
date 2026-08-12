@@ -439,6 +439,19 @@ const CustomerClassification: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="rounded-sm border border-border bg-card p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            付费数据来源：<span className="font-medium text-foreground">ATP 费用分析系统</span>
+            {data.paidPeriod && (
+              <span> · 统计月份 <span className="font-mono tabular-nums text-foreground">{data.paidPeriod}</span></span>
+            )}
+          </p>
+          {!data.hasAtpData && (
+            <span className="inline-flex items-center rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
+              ⚠ 暂无 ATP 费用数据，付费门店数/付费金额显示为 0
+            </span>
+          )}
+        </div>
         <div className="mb-4 grid grid-cols-3 gap-4">
           <KpiCard
             icon="🏬"

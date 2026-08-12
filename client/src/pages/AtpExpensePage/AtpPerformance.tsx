@@ -1214,7 +1214,8 @@ const AtpPerformance: React.FC<AtpPerformanceProps> = ({
       toast.success('报表已生成，请点击右上角下载按钮查看/下载');
     } catch (err) {
       logger.error('Failed to export ATP performance:', err);
-      toast.error('导出失败，请重试');
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`导出失败：${msg}`);
     } finally {
       setExporting(false);
     }

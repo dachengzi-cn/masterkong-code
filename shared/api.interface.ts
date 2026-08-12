@@ -419,6 +419,12 @@ export interface GetClassificationResponse {
   totalStoreCount: number;
   totalPaidStoreCount: number;
   totalPaidAmount: number;
+  /** 付费数据源标识：固定为 'atp'（ATP 费用分析系统） */
+  paidDataSource: 'atp';
+  /** 统计所依据的 ATP 最新可用月份（YYYY-MM），无 ATP 费用数据时为 null */
+  paidPeriod: string | null;
+  /** 是否获取到 ATP 费用数据（false 时付费指标恒为 0） */
+  hasAtpData: boolean;
 }
 
 export interface RouteMappingItem {
@@ -1232,6 +1238,129 @@ export type CapabilityExportParams = CapabilityScoreParams;
 export interface CapabilityExportResult {
   fileName: string;
   sheetNames: string[];
+}
+
+// ==================== 数据库表格可视化 ====================
+
+/** 列数据类型分类（用于前端展示与筛选） */
+export type DbColumnKind =
+  | 'number'
+  | 'text'
+  | 'date'
+  | 'boolean'
+  | 'json'
+  | 'uuid'
+  | 'other';
+
+/** 数据库表基本信息 */
+export interface DbTableInfo {
+  schema: string;
+  name: string;
+  /** BASE TABLE / VIEW */
+  type: string;
+  /** pg 估算行数 */
+  rowEstimate: number;
+  comment: string | null;
+  columnCount: number;
+}
+
+/** 数据库连接信息 */
+export interface DbSystemInfo {
+  database: string;
+  host: string;
+  version: string | null;
+}
+
+/** 表列表响应 */
+export interface DbTableListResponse extends DbSystemInfo {
+  tables: DbTableInfo[];
+}
+
+/** 列结构信息 */
+export interface DbColumnInfo {
+  name: string;
+  ordinal: number;
+  dataType: string;
+  udtName: string;
+  isNullable: boolean;
+  isPrimaryKey: boolean;
+  isUnique: boolean;
+  columnDefault: string | null;
+  comment: string | null;
+  maxLength: number | null;
+  numericPrecision: number | null;
+  numericScale: number | null;
+  kind: DbColumnKind;
+}
+
+/** 表结构响应 */
+export interface DbTableStructureResponse {
+  table: DbTableInfo;
+  columns: DbColumnInfo[];
+  totalRows: number;
+}
+
+/** 列筛选条件（服务端过滤） */
+export interface DbTableFilter {
+  type: 'text' | 'number' | 'date' | 'boolean';
+  /** text：包含关键字；number：精确值；boolean：true/false */
+  value?: string | number | boolean;
+  /** number/date 范围下界 */
+  min?: string | number;
+  /** number/date 范围上界 */
+  max?: string | number;
+}
+
+/** 数据查询参数 */
+export interface DbTableDataParams {
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
+  /** 全局关键字（对文本类列 ILIKE 匹配） */
+  q?: string;
+  filters?: Record<string, DbTableFilter>;
+}
+
+/** 分页数据响应 */
+export interface DbTableDataResponse {
+  columns: DbColumnInfo[];
+  rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** 单列统计结果 */
+export interface DbColumnStats {
+  name: string;
+  kind: DbColumnKind;
+  /** 非空行数 */
+  count: number;
+  totalCount: number;
+  nullCount: number;
+  distinctCount: number | null;
+  min: string | number | null;
+  max: string | number | null;
+  sum: number | null;
+  avg: number | null;
+  /** 文本列高频值（前 8） */
+  topValues: Array<{ value: string; count: number }>;
+  /** 数值列直方图 / 日期列按天计数 */
+  histogram: Array<{ bucket: string; count: number }>;
+}
+
+/** 统计响应 */
+export interface DbTableStatsResponse {
+  totalRows: number;
+  columns: DbColumnStats[];
+}
+
+/** 导出 JSON 响应（供前端生成 Excel） */
+export interface DbTableExportJsonResponse {
+  columns: DbColumnInfo[];
+  rows: Record<string, unknown>[];
+  count: number;
 }
 
 

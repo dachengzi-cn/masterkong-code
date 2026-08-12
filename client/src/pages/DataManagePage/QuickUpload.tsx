@@ -50,6 +50,8 @@ interface ParsedFile {
   fields?: FieldConfig[];
   dateFieldName?: string;
   months: string[];
+  /** 解析中被过滤的付费金额列（不导入系统） */
+  ignoredPaidAmountColumns?: string[];
 }
 
 interface ModuleGroup {
@@ -201,6 +203,16 @@ const CUSTOMER_ALIASES: Record<string, string> = {
   '客户级别': 'tier',
 };
 
+/** 付费金额列名黑名单：此类列不再被导入，付费金额唯一来源为费用资料（ATP费用 sheet） */
+const PAID_AMOUNT_COLUMN_NAMES = ['付费金额', '付费金额(元)', '付费金额（元）', '付费金额/元', '付费金额元'];
+
+function isPaidAmountColumn(header: string): boolean {
+  const trimmed = header.trim();
+  return PAID_AMOUNT_COLUMN_NAMES.some(
+    (name) => trimmed === name || trimmed.replace(/\s/g, '') === name.replace(/\s/g, ''),
+  );
+}
+
 function parseCustomerFile(file: File): Promise<ParsedFile> {
   return import('xlsx-js-style').then((XLSX) => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -219,9 +231,11 @@ function parseCustomerFile(file: File): Promise<ParsedFile> {
         const rawHeaders = rows[0].map((v: unknown) => String(v ?? '').trim());
         const columnMap: Array<{ index: number; field: string }> = [];
         const extraColumns: Array<{ index: number; name: string }> = [];
+        const ignoredPaidAmountColumns: string[] = [];
         rawHeaders.forEach((h: string, i: number) => {
           const mapped = CUSTOMER_ALIASES[h];
           if (mapped) columnMap.push({ index: i, field: mapped });
+          else if (isPaidAmountColumn(h)) ignoredPaidAmountColumns.push(h.trim());
           else if (h) extraColumns.push({ index: i, name: h });
         });
         const codeCol = columnMap.find((c) => c.field === 'customer_code');
@@ -246,7 +260,7 @@ function parseCustomerFile(file: File): Promise<ParsedFile> {
           });
         }
         if (customers.length === 0) { reject(new Error('未解析到有效的客户数据')); return; }
-        resolve({ file, module: 'customer', fileName: file.name, rows: customers, months: [] });
+        resolve({ file, module: 'customer', fileName: file.name, rows: customers, months: [], ignoredPaidAmountColumns });
       } catch (err) { reject(err); }
     };
     reader.onerror = () => reject(new Error('文件读取失败'));
@@ -609,6 +623,21 @@ const QuickUpload: React.FC<QuickUploadProps> = ({ onUploadComplete }) => {
     setErrorFiles(errors);
     setDialogOpen(true);
     event.target.value = '';
+
+    // 付费金额列校验：被过滤的列需明确告知用户，付费金额统一以费用资料（ATP费用）为准
+    const paidAmountFiles = parsedFiles.filter(
+      (p) => (p.ignoredPaidAmountColumns?.length ?? 0) > 0,
+    );
+    if (paidAmountFiles.length > 0) {
+      const names = paidAmountFiles
+        .flatMap((p) => p.ignoredPaidAmountColumns ?? [])
+        .filter((v, i, arr) => arr.indexOf(v) === i)
+        .join('、');
+      toast.warning(
+        `已忽略「${names}」列：付费金额不再从客户资料导入，统一以费用资料（ATP费用）为准`,
+        { duration: 6000 },
+      );
+    }
   }, []);
 
   const toggleMonth = (moduleIndex: number, month: string) => {
