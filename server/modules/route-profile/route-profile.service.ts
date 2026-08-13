@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger, NotFoundException, OnModuleInit } from '@ne
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { routeProfile } from '@server/database/schema';
 import { eq, count, sql, and, or, like } from 'drizzle-orm';
+import { isMemoryFallbackEnabled, shouldFallbackToMemory } from '@server/common/utils/memory-fallback';
 import type {
   RouteProfile,
   UploadRouteResponse,
@@ -44,8 +45,15 @@ export class RouteProfileService implements OnModuleInit {
       this.logger.log(`数据库正常 (${result?.total ?? 0} 条记录)，使用数据库存储`);
     } catch (err) {
       const message = (err as Error).message;
-      this.logger.error(`数据库验证失败: ${message}`, err instanceof Error ? err.stack : String(err));
-      this.useMemoryStorage = true;
+      if (isMemoryFallbackEnabled()) {
+        this.logger.error(`数据库验证失败: ${message}`, err instanceof Error ? err.stack : String(err));
+        this.useMemoryStorage = true;
+        return;
+      }
+      // 内存回退已禁用：直接报错，拒绝静默降级
+      throw new Error(
+        `线路资料数据库不可用且内存回退已禁用（MEMORY_FALLBACK=false），拒绝降级。原始错误: ${message}`,
+      );
     }
   }
 
@@ -84,9 +92,12 @@ export class RouteProfileService implements OnModuleInit {
           });
       return { fileName: '数据模板-线路资料', uploadTime, rowCount: total };
     } catch (err) {
-      this.logger.warn(`getLatestUploadRecord 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getLatestUploadRecord();
+      if (shouldFallbackToMemory('RouteProfileService.getLatestUploadRecord', err)) {
+        this.logger.warn(`getLatestUploadRecord 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getLatestUploadRecord();
+      }
+      throw err;
     }
   }
 
@@ -149,9 +160,12 @@ export class RouteProfileService implements OnModuleInit {
         total,
       };
     } catch (err) {
-      this.logger.warn(`findAll 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.findAll(page, pageSize, keyword);
+      if (shouldFallbackToMemory('RouteProfileService.findAll', err)) {
+        this.logger.warn(`findAll 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.findAll(page, pageSize, keyword);
+      }
+      throw err;
     }
   }
 
@@ -273,9 +287,12 @@ export class RouteProfileService implements OnModuleInit {
       this.logger.log(`All route profiles deleted by ${userId}`);
       return { success: true };
     } catch (err) {
-      this.logger.warn(`removeAll 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.removeAll(userId);
+      if (shouldFallbackToMemory('RouteProfileService.removeAll', err)) {
+        this.logger.warn(`removeAll 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.removeAll(userId);
+      }
+      throw err;
     }
   }
 
@@ -296,9 +313,12 @@ export class RouteProfileService implements OnModuleInit {
       this.logger.log(`Route profile deleted: ${id} by ${userId}`);
       return { success: true };
     } catch (err) {
-      this.logger.warn(`removeOne 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return { success: true };
+      if (shouldFallbackToMemory('RouteProfileService.removeOne', err)) {
+        this.logger.warn(`removeOne 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return { success: true };
+      }
+      throw err;
     }
   }
 
@@ -322,9 +342,12 @@ export class RouteProfileService implements OnModuleInit {
       }
       return Array.from(names).sort();
     } catch (err) {
-      this.logger.warn(`getAllRouteNames 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getAllRouteNames();
+      if (shouldFallbackToMemory('RouteProfileService.getAllRouteNames', err)) {
+        this.logger.warn(`getAllRouteNames 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getAllRouteNames();
+      }
+      throw err;
     }
   }
 }

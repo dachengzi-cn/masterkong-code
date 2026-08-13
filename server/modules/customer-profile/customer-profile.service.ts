@@ -3,6 +3,7 @@ import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack
 import { customerProfile } from '@server/database/schema';
 import { eq, count, sql, and, or, like } from 'drizzle-orm';
 import { DatasetService } from '@server/modules/dataset/dataset.service';
+import { isMemoryFallbackEnabled, shouldFallbackToMemory } from '@server/common/utils/memory-fallback';
 import type {
   CustomerProfile,
   CustomerSummary,
@@ -157,8 +158,16 @@ export class CustomerProfileService implements OnModuleInit {
       this.useMemoryStorage = false;
       this.logger.log(`数据库正常 (${result?.total ?? 0} 条记录)，使用数据库存储`);
     } catch (err) {
-      this.logger.warn(`数据库不可用 (${(err as Error).message})，切换到内存存储`);
-      this.useMemoryStorage = true;
+      const message = (err as Error).message;
+      if (isMemoryFallbackEnabled()) {
+        this.logger.warn(`数据库不可用 (${message})，切换到内存存储`);
+        this.useMemoryStorage = true;
+        return;
+      }
+      // 内存回退已禁用：直接报错，拒绝静默降级
+      throw new Error(
+        `客户资料数据库不可用且内存回退已禁用（MEMORY_FALLBACK=false），拒绝降级。原始错误: ${message}`,
+      );
     }
   }
 
@@ -186,9 +195,12 @@ export class CustomerProfileService implements OnModuleInit {
         tiers: (tiersResult as unknown as Array<{ tier: string }>).map((t) => t.tier),
       };
     } catch (err) {
-      this.logger.warn(`getSummary 数据库失败，切换到内存: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getSummary();
+      if (shouldFallbackToMemory('CustomerProfileService.getSummary', err)) {
+        this.logger.warn(`getSummary 数据库失败，切换到内存: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getSummary();
+      }
+      throw err;
     }
   }
 
@@ -227,9 +239,12 @@ export class CustomerProfileService implements OnModuleInit {
           });
       return { fileName: '数据模板-客户资料', uploadTime, rowCount: total };
     } catch (err) {
-      this.logger.warn(`getLatestUploadRecord 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getLatestUploadRecord();
+      if (shouldFallbackToMemory('CustomerProfileService.getLatestUploadRecord', err)) {
+        this.logger.warn(`getLatestUploadRecord 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getLatestUploadRecord();
+      }
+      throw err;
     }
   }
 
@@ -298,9 +313,12 @@ export class CustomerProfileService implements OnModuleInit {
         total,
       };
     } catch (err) {
-      this.logger.warn(`findAll 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.findAll(page, pageSize, keyword);
+      if (shouldFallbackToMemory('CustomerProfileService.findAll', err)) {
+        this.logger.warn(`findAll 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.findAll(page, pageSize, keyword);
+      }
+      throw err;
     }
   }
 
@@ -348,9 +366,12 @@ export class CustomerProfileService implements OnModuleInit {
       this.unpaginatedCache = { data, expires: Date.now() + CustomerProfileService.CACHE_TTL_MS };
       return data;
     } catch (err) {
-      this.logger.warn(`findAllUnpaginated 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.findAllUnpaginated();
+      if (shouldFallbackToMemory('CustomerProfileService.findAllUnpaginated', err)) {
+        this.logger.warn(`findAllUnpaginated 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.findAllUnpaginated();
+      }
+      throw err;
     }
   }
 
@@ -455,9 +476,12 @@ export class CustomerProfileService implements OnModuleInit {
       this.invalidateUnpaginatedCache();
       return { inserted, updated, total: customers.length };
     } catch (err) {
-      this.logger.error(`upsertBatch 数据库失败，切换到内存: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.upsertBatch(customers, userId);
+      if (shouldFallbackToMemory('CustomerProfileService.upsertBatch', err)) {
+        this.logger.error(`upsertBatch 数据库失败，切换到内存: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.upsertBatch(customers, userId);
+      }
+      throw err;
     }
   }
 
@@ -475,9 +499,12 @@ export class CustomerProfileService implements OnModuleInit {
       this.invalidateUnpaginatedCache();
       return { success: true };
     } catch (err) {
-      this.logger.warn(`removeAll 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.removeAll(userId);
+      if (shouldFallbackToMemory('CustomerProfileService.removeAll', err)) {
+        this.logger.warn(`removeAll 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.removeAll(userId);
+      }
+      throw err;
     }
   }
 
@@ -500,9 +527,12 @@ export class CustomerProfileService implements OnModuleInit {
       this.invalidateUnpaginatedCache();
       return { success: true };
     } catch (err) {
-      this.logger.warn(`removeOne 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return { success: true };
+      if (shouldFallbackToMemory('CustomerProfileService.removeOne', err)) {
+        this.logger.warn(`removeOne 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return { success: true };
+      }
+      throw err;
     }
   }
 
@@ -522,9 +552,12 @@ export class CustomerProfileService implements OnModuleInit {
       const hasCustomers = parseInt(String(totalResult?.total ?? 0), 10) > 0;
       return { dimensions, matched: hasCustomers };
     } catch (err) {
-      this.logger.warn(`getDimensions 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return { dimensions, matched: false };
+      if (shouldFallbackToMemory('CustomerProfileService.getDimensions', err)) {
+        this.logger.warn(`getDimensions 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return { dimensions, matched: false };
+      }
+      throw err;
     }
   }
 
@@ -604,9 +637,12 @@ export class CustomerProfileService implements OnModuleInit {
         specifications: [],
       };
     } catch (err) {
-      this.logger.warn(`getFilterOptions 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getFilterOptions(region);
+      if (shouldFallbackToMemory('CustomerProfileService.getFilterOptions', err)) {
+        this.logger.warn(`getFilterOptions 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getFilterOptions(region);
+      }
+      throw err;
     }
   }
 
@@ -655,9 +691,12 @@ export class CustomerProfileService implements OnModuleInit {
           },
         }));
       } catch (err) {
-        this.logger.warn(`getClassification 数据库失败，切换到内存: ${(err as Error).message}`);
-        this.useMemoryStorage = true;
-        return this.getClassification();
+        if (shouldFallbackToMemory('CustomerProfileService.getClassification', err)) {
+          this.logger.warn(`getClassification 数据库失败，切换到内存: ${(err as Error).message}`);
+          this.useMemoryStorage = true;
+          return this.getClassification();
+        }
+        throw err;
       }
     }
 
@@ -877,9 +916,12 @@ export class CustomerProfileService implements OnModuleInit {
 
       return { personnel, monthlyRates, formatTypes };
     } catch (err) {
-      this.logger.warn(`getFormatDrilldown 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getFormatDrilldown(region);
+      if (shouldFallbackToMemory('CustomerProfileService.getFormatDrilldown', err)) {
+        this.logger.warn(`getFormatDrilldown 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getFormatDrilldown(region);
+      }
+      throw err;
     }
   }
 }

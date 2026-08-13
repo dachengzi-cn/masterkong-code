@@ -550,17 +550,14 @@ for (const { h, i } of validIndices) {
 });
 ```
 
-### 7.3 内存回退机制残留
+### 7.3 内存回退机制治理
 
-**影响**: 部分服务在 DB 写入失败时仍会回退到内存存储（`useMemoryStorage = true`），导致数据在服务重启后丢失。
+**影响**: 部分服务在 DB 写入失败时回退到内存存储（`useMemoryStorage = true`），可能导致数据在服务重启后丢失。
 
-**当前状态**:
-- `expense-profile.service.ts` — **已移除**回退，直接 `throw err`
-- `route-profile.service.ts` — **已移除**回退，直接 `throw err`
-- `customer-profile.service.ts` — **仍保留**回退（`this.useMemoryStorage = true; return this.upsertBatch(...)`）
-- `dataset.service.ts` — **仍保留**回退
-
-**建议**: 统一移除所有服务的内存回退，让错误直接暴露。
+**当前状态（2026-07-13 已治理）**:
+- 引入 `MEMORY_FALLBACK` 环境开关（默认 `false`），数据库不可用时**直接报错拒绝降级**，杜绝静默数据丢失
+- 4 个数据模块（数据集/客户/线路/费用）的 `verifyDatabase` 与全部运行时降级点已统一治理
+- 具体治理方案与决策矩阵详见 **[数据持久化与内存回退治理设计文档](memory-storage-governance.md)**
 
 ### 7.4 费用资料无唯一约束
 

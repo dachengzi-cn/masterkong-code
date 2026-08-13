@@ -3,6 +3,7 @@ import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack
 import { createHash } from 'crypto';
 import { dataset, dataRecord, customerProfile } from '@server/database/schema';
 import { eq, desc, count, sql } from 'drizzle-orm';
+import { isMemoryFallbackEnabled, shouldFallbackToMemory } from '@server/common/utils/memory-fallback';
 import { CustomerProfileService } from '../customer-profile/customer-profile.service';
 import { DEALER_TYPE_TO_FORMAT } from '../customer-profile/customer-profile.service';
 import { RouteProfileService } from '../route-profile/route-profile.service';
@@ -444,8 +445,16 @@ export class DatasetService implements OnModuleInit {
       this.useMemoryStorage = false;
       this.logger.log(`数据库正常 (${result?.total ?? 0} 条记录)，使用数据库存储`);
     } catch (err) {
-      this.logger.warn(`数据库不可用 (${(err as Error).message})，切换到内存存储`);
-      this.useMemoryStorage = true;
+      const message = (err as Error).message;
+      if (isMemoryFallbackEnabled()) {
+        this.logger.warn(`数据库不可用 (${message})，切换到内存存储`);
+        this.useMemoryStorage = true;
+        return;
+      }
+      // 内存回退已禁用：直接报错，拒绝静默降级
+      throw new Error(
+        `数据集数据库不可用且内存回退已禁用（MEMORY_FALLBACK=false），拒绝降级。原始错误: ${message}`,
+      );
     }
   }
 
@@ -492,9 +501,12 @@ export class DatasetService implements OnModuleInit {
       }));
       return { items: mappedItems, total: isNaN(total) ? 0 : total };
     } catch (err) {
-      this.logger.warn(`findAll 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.findAll(page, pageSize);
+      if (shouldFallbackToMemory('DatasetService.findAll', err)) {
+        this.logger.warn(`findAll 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.findAll(page, pageSize);
+      }
+      throw err;
     }
   }
 
@@ -768,9 +780,12 @@ export class DatasetService implements OnModuleInit {
       this.logger.log(`Dataset created: ${inserted.id} with ${records.length} records`);
       return { id: inserted.id };
     } catch (err) {
-      this.logger.warn(`create 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.create(name, fields, records, userId, dedupMode, existingDatasetId);
+      if (shouldFallbackToMemory('DatasetService.create', err)) {
+        this.logger.warn(`create 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.create(name, fields, records, userId, dedupMode, existingDatasetId);
+      }
+      throw err;
     }
   }
 
@@ -808,9 +823,12 @@ export class DatasetService implements OnModuleInit {
       this.logger.log(`Appended ${records.length} records to dataset ${datasetId}`);
       return { appended: records.length };
     } catch (err) {
-      this.logger.warn(`appendRecords 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.appendRecords(datasetId, records, userId);
+      if (shouldFallbackToMemory('DatasetService.appendRecords', err)) {
+        this.logger.warn(`appendRecords 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.appendRecords(datasetId, records, userId);
+      }
+      throw err;
     }
   }
 
@@ -830,9 +848,12 @@ export class DatasetService implements OnModuleInit {
       this.logger.log(`Dataset deleted: ${id}`);
       return { success: true };
     } catch (err) {
-      this.logger.warn(`remove 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.remove(id);
+      if (shouldFallbackToMemory('DatasetService.remove', err)) {
+        this.logger.warn(`remove 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.remove(id);
+      }
+      throw err;
     }
   }
 
@@ -866,9 +887,12 @@ export class DatasetService implements OnModuleInit {
         customerCodeField,
       };
     } catch (err) {
-      this.logger.warn(`findOne 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.findOne(id);
+      if (shouldFallbackToMemory('DatasetService.findOne', err)) {
+        this.logger.warn(`findOne 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.findOne(id);
+      }
+      throw err;
     }
   }
 
@@ -998,9 +1022,12 @@ export class DatasetService implements OnModuleInit {
         existingDatasetName: duplicateCount > 0 ? latestDataset.name : null,
       };
     } catch (err) {
-      this.logger.warn(`checkDuplicates 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return { duplicateCount: 0, totalCount: records.length, existingDatasetId: null, existingDatasetName: null };
+      if (shouldFallbackToMemory('DatasetService.checkDuplicates', err)) {
+        this.logger.warn(`checkDuplicates 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return { duplicateCount: 0, totalCount: records.length, existingDatasetId: null, existingDatasetName: null };
+      }
+      throw err;
     }
   }
 
@@ -1159,9 +1186,12 @@ export class DatasetService implements OnModuleInit {
       this.logger.log(`Dataset merged by months: ${targetDatasetId}`);
       return { id: targetDatasetId };
     } catch (err) {
-      this.logger.warn(`mergeByMonths 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.mergeByMonths(name, fields, records, userId, uploadMonths);
+      if (shouldFallbackToMemory('DatasetService.mergeByMonths', err)) {
+        this.logger.warn(`mergeByMonths 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.mergeByMonths(name, fields, records, userId, uploadMonths);
+      }
+      throw err;
     }
   }
 
@@ -1215,9 +1245,12 @@ export class DatasetService implements OnModuleInit {
         yearOnYearChange: 0,
       };
     } catch (err) {
-      this.logger.warn(`getKpis 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getKpis(datasetId, params);
+      if (shouldFallbackToMemory('DatasetService.getKpis', err)) {
+        this.logger.warn(`getKpis 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getKpis(datasetId, params);
+      }
+      throw err;
     }
   }
 
@@ -1277,9 +1310,12 @@ export class DatasetService implements OnModuleInit {
       this.logger.log(`Trend chart for dataset ${datasetId}`);
       return { xAxis, series: [{ name: metric, data }] };
     } catch (err) {
-      this.logger.warn(`getTrendChart 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getTrendChart(datasetId, params);
+      if (shouldFallbackToMemory('DatasetService.getTrendChart', err)) {
+        this.logger.warn(`getTrendChart 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getTrendChart(datasetId, params);
+      }
+      throw err;
     }
   }
 
@@ -1334,9 +1370,12 @@ export class DatasetService implements OnModuleInit {
       this.logger.log(`Bar chart for dataset ${datasetId}`);
       return { categories, data };
     } catch (err) {
-      this.logger.warn(`getBarChart 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getBarChart(datasetId, params);
+      if (shouldFallbackToMemory('DatasetService.getBarChart', err)) {
+        this.logger.warn(`getBarChart 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getBarChart(datasetId, params);
+      }
+      throw err;
     }
   }
 
@@ -1391,9 +1430,12 @@ export class DatasetService implements OnModuleInit {
       this.logger.log(`Pie chart for dataset ${datasetId}`);
       return { items };
     } catch (err) {
-      this.logger.warn(`getPieChart 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return this.getPieChart(datasetId, params);
+      if (shouldFallbackToMemory('DatasetService.getPieChart', err)) {
+        this.logger.warn(`getPieChart 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return this.getPieChart(datasetId, params);
+      }
+      throw err;
     }
   }
 
@@ -3835,9 +3877,12 @@ export class DatasetService implements OnModuleInit {
       });
       return { formatBreakdown, brandBreakdown, specificationBreakdown };
     } catch (err) {
-      this.logger.warn('getSalesRepDrilldown 失败: ' + (err as Error).message);
-      this.useMemoryStorage = true;
-      return { formatBreakdown: [], brandBreakdown: [], specificationBreakdown: [] };
+      if (shouldFallbackToMemory('DatasetService.getSalesRepDrilldown', err)) {
+        this.logger.warn('getSalesRepDrilldown 失败: ' + (err as Error).message);
+        this.useMemoryStorage = true;
+        return { formatBreakdown: [], brandBreakdown: [], specificationBreakdown: [] };
+      }
+      throw err;
     }
   }
 
@@ -4060,9 +4105,12 @@ export class DatasetService implements OnModuleInit {
       }
       return this.buildSalesRepUnconvertedDrilldown(salesRep, region, tier, serviceCodes, dealtMonths, dateTo);
     } catch (err) {
-      this.logger.warn('getSalesRepUnconvertedDrilldown 失败: ' + (err as Error).message);
-      this.useMemoryStorage = true;
-      return empty();
+      if (shouldFallbackToMemory('DatasetService.getSalesRepUnconvertedDrilldown', err)) {
+        this.logger.warn('getSalesRepUnconvertedDrilldown 失败: ' + (err as Error).message);
+        this.useMemoryStorage = true;
+        return empty();
+      }
+      throw err;
     }
   }
 
@@ -4110,9 +4158,12 @@ export class DatasetService implements OnModuleInit {
       }
       return { removed: totalRemoved };
     } catch (err) {
-      this.logger.warn(`cleanupDuplicates 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return { removed: 0 };
+      if (shouldFallbackToMemory('DatasetService.cleanupDuplicates', err)) {
+        this.logger.warn(`cleanupDuplicates 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return { removed: 0 };
+      }
+      throw err;
     }
   }
 
@@ -4181,9 +4232,12 @@ export class DatasetService implements OnModuleInit {
         pairs: (pairResult as unknown as Array<{ brand: string; specification: string }>).filter((r) => r.brand && r.specification),
       };
     } catch (err) {
-      this.logger.warn(`getSpecOptions 失败: ${(err as Error).message}`);
-      this.useMemoryStorage = true;
-      return { brands: [], specifications: [], pairs: [] };
+      if (shouldFallbackToMemory('DatasetService.getSpecOptions', err)) {
+        this.logger.warn(`getSpecOptions 失败: ${(err as Error).message}`);
+        this.useMemoryStorage = true;
+        return { brands: [], specifications: [], pairs: [] };
+      }
+      throw err;
     }
   }
 
