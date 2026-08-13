@@ -79,21 +79,6 @@ export class ReportsService implements OnModuleInit {
       );
     }
 
-    // 授予 anon_ 角色权限：datapaas 中间件会以 anon_ 角色执行 SQL，
-    // 若缺少 INSERT/UPDATE/DELETE/SELECT 会导致导出报表时 42501 权限错误。
-    try {
-      await this.db.execute(sql`
-        GRANT SELECT, INSERT, UPDATE, DELETE ON report_record TO anon_
-      `);
-      await this.db.execute(sql`
-        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon_
-      `);
-    } catch (err) {
-      this.logger.warn(
-        `授予 anon_ 角色报表表权限失败（可能角色不存在或连接用户无授权权限）: ${(err as Error).message}`,
-      );
-    }
-
     try {
       await mkdir(this.storageDir, { recursive: true });
     } catch (err) {
