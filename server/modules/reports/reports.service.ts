@@ -5,6 +5,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { OnModuleInit } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
@@ -71,9 +72,35 @@ export class ReportsService implements OnModuleInit {
       await this.db.execute(sql`
         CREATE INDEX IF NOT EXISTS idx_report_record_created ON report_record(_created_at)
       `);
+    } catch (err) {
+      this.logger.error(
+        `报表表初始化失败（导出功能将不可用）: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+
+    // 授予 anon_ 角色权限：datapaas 中间件会以 anon_ 角色执行 SQL，
+    // 若缺少 INSERT/UPDATE/DELETE/SELECT 会导致导出报表时 42501 权限错误。
+    try {
+      await this.db.execute(sql`
+        GRANT SELECT, INSERT, UPDATE, DELETE ON report_record TO anon_
+      `);
+      await this.db.execute(sql`
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon_
+      `);
+    } catch (err) {
+      this.logger.warn(
+        `授予 anon_ 角色报表表权限失败（可能角色不存在或连接用户无授权权限）: ${(err as Error).message}`,
+      );
+    }
+
+    try {
       await mkdir(this.storageDir, { recursive: true });
     } catch (err) {
-      this.logger.warn(`报表表初始化失败（可能数据库未就绪）: ${(err as Error).message}`);
+      this.logger.error(
+        `报表存储目录创建失败（导出功能将不可用）: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
     }
   }
 
@@ -103,25 +130,42 @@ export class ReportsService implements OnModuleInit {
     const relPath = `${recordId}.xlsx`;
     const absPath = join(this.storageDir, relPath);
 
-    await mkdir(this.storageDir, { recursive: true });
-    await writeFile(absPath, buffer);
+    try {
+      await mkdir(this.storageDir, { recursive: true });
+      await writeFile(absPath, buffer);
+    } catch (err) {
+      this.logger.error(`报表文件写入失败: ${absPath}`, (err as Error).stack);
+      throw new InternalServerErrorException(
+        `报表文件写入失败，请检查服务器存储目录权限（${this.storageDir}）`,
+      );
+    }
 
-    const [row] = await this.db
-      .insert(reportRecord)
-      .values({
-        id: recordId,
-        type: request.type || 'general',
-        title: request.title || fileName,
-        fileName,
-        filePath: relPath,
-        fileSize: buffer.length,
-        status: 'ready',
-        createdBy: userId,
-      })
-      .returning();
+    let row: ReportRecordRow | undefined;
+    try {
+      [row] = (await this.db
+        .insert(reportRecord)
+        .values({
+          id: recordId,
+          type: request.type || 'general',
+          title: request.title || fileName,
+          fileName,
+          filePath: relPath,
+          fileSize: buffer.length,
+          status: 'ready',
+          createdBy: userId,
+        })
+        .returning()) as unknown as ReportRecordRow[];
+    } catch (err) {
+      // 清理已写入的孤儿文件，避免磁盘残留
+      await unlink(absPath).catch(() => undefined);
+      this.logger.error('报表记录写入数据库失败', (err as Error).stack);
+      throw new InternalServerErrorException(
+        `报表记录写入失败：${(err as Error).message}（请确认数据库迁移已执行且 anon_ 角色具备 report_record 表权限）`,
+      );
+    }
 
     this.logger.log(`报表已生成: ${fileName} (${buffer.length} bytes)`);
-    return this.toReportRecord(row as unknown as ReportRecordRow);
+    return this.toReportRecord(row);
   }
 
   // ========== 查询 ==========

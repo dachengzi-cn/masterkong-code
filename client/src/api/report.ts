@@ -17,49 +17,78 @@ export function notifyReportListChanged() {
   window.dispatchEvent(new CustomEvent(REPORT_LIST_CHANGED_EVENT));
 }
 
+/**
+ * 从 axios 错误中提取服务端返回的可读错误信息，
+ * 避免前端只显示笼统的 "Request failed with status code 500"。
+ */
+function extractErrorMessage(err: unknown): string {
+  const data = (err as { response?: { data?: unknown } })?.response?.data;
+  if (data && typeof data === 'object') {
+    const msg = (data as { error?: { message?: unknown } })?.error?.message;
+    if (typeof msg === 'string' && msg) return msg;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 /** 生成报表（后端生成 Excel 并持久化，可在全局下载按钮中查看/下载） */
 export async function generateReport(request: GenerateReportRequest) {
-  const res = await axiosForBackend({
-    url: '/api/reports/generate',
-    method: 'POST',
-    data: request,
-  });
-  notifyReportListChanged();
-  return res.data as GenerateReportResponse;
+  try {
+    const res = await axiosForBackend({
+      url: '/api/reports/generate',
+      method: 'POST',
+      data: request,
+    });
+    notifyReportListChanged();
+    return res.data as GenerateReportResponse;
+  } catch (err) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /** 报表列表 */
 export async function getReports(params: GetReportsParams = {}) {
-  const res = await axiosForBackend({
-    url: '/api/reports',
-    method: 'GET',
-    params: {
-      page: params.page ?? 1,
-      pageSize: params.pageSize ?? 20,
-      ...(params.type ? { type: params.type } : {}),
-    },
-  });
-  return res.data as GetReportsResponse;
+  try {
+    const res = await axiosForBackend({
+      url: '/api/reports',
+      method: 'GET',
+      params: {
+        page: params.page ?? 1,
+        pageSize: params.pageSize ?? 20,
+        ...(params.type ? { type: params.type } : {}),
+      },
+    });
+    return res.data as GetReportsResponse;
+  } catch (err) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /** 删除报表（文件 + 记录） */
 export async function deleteReport(id: string) {
-  const res = await axiosForBackend({
-    url: `/api/reports/${id}`,
-    method: 'DELETE',
-  });
-  notifyReportListChanged();
-  return res.data as { success: boolean };
+  try {
+    const res = await axiosForBackend({
+      url: `/api/reports/${id}`,
+      method: 'DELETE',
+    });
+    notifyReportListChanged();
+    return res.data as { success: boolean };
+  } catch (err) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /** 删除全部报表（文件 + 记录） */
 export async function deleteAllReports() {
-  const res = await axiosForBackend({
-    url: '/api/reports',
-    method: 'DELETE',
-  });
-  notifyReportListChanged();
-  return res.data as { success: boolean; deletedCount: number };
+  try {
+    const res = await axiosForBackend({
+      url: '/api/reports',
+      method: 'DELETE',
+    });
+    notifyReportListChanged();
+    return res.data as { success: boolean; deletedCount: number };
+  } catch (err) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 export function getReportDownloadUrl(id: string) {
@@ -72,20 +101,24 @@ export function getReportPreviewUrl(id: string) {
 
 /** 下载报表到本地 */
 export async function downloadReportFile(report: ReportRecord) {
-  const res = await axiosForBackend({
-    url: getReportDownloadUrl(report.id),
-    method: 'GET',
-    responseType: 'blob',
-  });
-  const blob = res.data as Blob;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = report.fileName || 'report.xlsx';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  try {
+    const res = await axiosForBackend({
+      url: getReportDownloadUrl(report.id),
+      method: 'GET',
+      responseType: 'blob',
+    });
+    const blob = res.data as Blob;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = report.fileName || 'report.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /**
