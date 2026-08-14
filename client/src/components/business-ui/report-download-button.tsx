@@ -14,6 +14,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   deleteAllReports,
   deleteReport,
   downloadReportFile,
@@ -66,6 +76,10 @@ export function ReportDownloadButton() {
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [deletingAll, setDeletingAll] = React.useState(false);
   const [previewReport, setPreviewReport] = React.useState<ReportRecord | null>(null);
+  // 删除确认（应用内 AlertDialog，替代 window.confirm：
+  // 原生 confirm 在 IDE 预览 Webview 中由宿主接管，曾触发宿主渲染异常）
+  const [confirmDeleteReport, setConfirmDeleteReport] = React.useState<ReportRecord | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = React.useState(false);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -119,26 +133,35 @@ export function ReportDownloadButton() {
     setPreviewReport(report);
   }, []);
 
-  const handleDelete = React.useCallback(
-    async (report: ReportRecord) => {
-      if (!window.confirm(`确定删除报表「${report.title}」吗？删除后不可恢复。`)) return;
-      setBusyId(report.id);
-      try {
-        await deleteReport(report.id);
-        toast.success("报表已删除");
-        refresh();
-      } catch (err) {
-        toast.error(`删除失败：${err instanceof Error ? err.message : String(err)}`);
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [refresh],
-  );
+  const handleDelete = React.useCallback((report: ReportRecord) => {
+    // 打开应用内确认弹窗（不再使用 window.confirm）
+    setConfirmDeleteReport(report);
+  }, []);
 
-  const handleDeleteAll = React.useCallback(async () => {
+  const confirmDeleteOne = React.useCallback(async () => {
+    if (!confirmDeleteReport) return;
+    const report = confirmDeleteReport;
+    setConfirmDeleteReport(null);
+    setBusyId(report.id);
+    try {
+      await deleteReport(report.id);
+      toast.success("报表已删除");
+      refresh();
+    } catch (err) {
+      toast.error(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusyId(null);
+    }
+  }, [confirmDeleteReport, refresh]);
+
+  const handleDeleteAll = React.useCallback(() => {
     if (!total) return;
-    if (!window.confirm(`确定删除我的全部 ${total} 份报表吗？删除后不可恢复。`)) return;
+    // 打开应用内确认弹窗（不再使用 window.confirm）
+    setConfirmDeleteAll(true);
+  }, [total]);
+
+  const confirmDeleteAllReports = React.useCallback(async () => {
+    setConfirmDeleteAll(false);
     setDeletingAll(true);
     try {
       const res = await deleteAllReports();
@@ -149,7 +172,7 @@ export function ReportDownloadButton() {
     } finally {
       setDeletingAll(false);
     }
-  }, [refresh, total]);
+  }, [refresh]);
 
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
@@ -292,6 +315,54 @@ export function ReportDownloadButton() {
         report={previewReport}
         onClose={() => setPreviewReport(null)}
       />
+
+      {/* 删除单个报表确认（应用内弹窗，替代 window.confirm） */}
+      <AlertDialog
+        open={!!confirmDeleteReport}
+        onOpenChange={(open) => !open && setConfirmDeleteReport(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">确认删除</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs">
+              确定删除报表「{confirmDeleteReport?.title}」吗？删除后不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={confirmDeleteOne}
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 删除全部报表确认（应用内弹窗，替代 window.confirm） */}
+      <AlertDialog
+        open={confirmDeleteAll}
+        onOpenChange={(open) => !open && setConfirmDeleteAll(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">确认删除</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs">
+              确定删除我的全部 {total} 份报表吗？删除后不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={confirmDeleteAllReports}
+            >
+              全部删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DropdownMenu>
   );
 }
