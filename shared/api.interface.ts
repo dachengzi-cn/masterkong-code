@@ -553,6 +553,102 @@ export interface DeleteExpenseResponse {
   success: boolean;
 }
 
+// ===== 费用预估模块 =====
+export interface ExpenseEstimateRecord {
+  id: string;
+  month: string;
+  region: string;
+  department: string;
+  activityName: string;
+  expenseSubject: string;
+  estimatedAmount: number;
+  actualAmount: number;
+  remark?: string;
+  createdAt?: string;
+}
+
+export interface CreateExpenseEstimateRequest {
+  month: string;
+  region: string;
+  department: string;
+  activityName: string;
+  expenseSubject: string;
+  estimatedAmount?: number;
+  actualAmount?: number;
+  remark?: string;
+}
+
+export type UpdateExpenseEstimateRequest = Partial<CreateExpenseEstimateRequest>;
+
+export interface ExpenseEstimateFilterParams {
+  monthFrom?: string;
+  monthTo?: string;
+  region?: string[] | string;
+  department?: string[] | string;
+  subject?: string[] | string;
+  activity?: string[] | string;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ExpenseEstimateListResponse {
+  items: ExpenseEstimateRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ExpenseEstimateSplitRow {
+  name: string;
+  estimatedAmount: number;
+  actualAmount: number;
+  /** 使用率百分比（0-100 及以上）；无预估金额时为 -1 */
+  usageRate: number;
+  /** 剩余额度 = 预估 - 登记 */
+  remainingAmount: number;
+}
+
+export interface ExpenseEstimateMonthTrendItem {
+  month: string;
+  estimatedAmount: number;
+  actualAmount: number;
+}
+
+export interface ExpenseEstimateOptions {
+  months: string[];
+  regions: string[];
+  departments: string[];
+  subjects: string[];
+  activities: string[];
+}
+
+export interface ExpenseEstimateKpis {
+  totalEstimated: number;
+  totalActual: number;
+  /** 整体使用率百分比；无预估金额时为 -1 */
+  overallUsageRate: number;
+  remainingAmount: number;
+  recordCount: number;
+  activityCount: number;
+  subjectCount: number;
+}
+
+export interface ExpenseEstimateSummary {
+  kpis: ExpenseEstimateKpis;
+  regionBreakdown: ExpenseEstimateSplitRow[];
+  departmentBreakdown: ExpenseEstimateSplitRow[];
+  subjectBreakdown: ExpenseEstimateSplitRow[];
+  activityBreakdown: ExpenseEstimateSplitRow[];
+  monthTrend: ExpenseEstimateMonthTrendItem[];
+  options: ExpenseEstimateOptions;
+}
+
+export interface ExpenseEstimateMutationResponse {
+  success: boolean;
+  id?: string;
+}
+
 export interface ExpenseSheetSummary {
   name: string;
   rowCount: number;

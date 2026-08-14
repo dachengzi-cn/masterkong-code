@@ -8,8 +8,20 @@ import compression from 'compression';
 
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { ensureDatabaseSchema } from './common/db-init';
 
 async function bootstrap() {
+  // 在创建 Nest 应用前先自动初始化数据库（建表 + anon_ 角色 + 权限）。
+  // 必须早于各业务模块 onModuleInit 的 verifyDatabase()，否则全新空库会因表不存在而启动失败，
+  // 且 datapaas 中间件以 anon_ 角色执行业务 SQL，缺少角色/权限会导致所有写请求 500。
+  try {
+    await ensureDatabaseSchema(
+      process.env.SUDA_DATABASE_URL || 'postgresql://localhost:5432/postgres',
+    );
+  } catch (err) {
+    new Logger('Bootstrap').warn(`数据库自动初始化失败: ${(err as Error).message}`);
+  }
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     abortOnError: process.env.NODE_ENV === 'production',
   });

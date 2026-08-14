@@ -42,6 +42,18 @@ function detectModule(fileName: string): ModuleType | null {
   return null;
 }
 
+/** 从请求异常中提取服务端返回的具体错误信息（优先 response.data.error.message） */
+function extractApiError(e: unknown): string {
+  const err = e as { response?: { data?: unknown }; message?: string };
+  const data = err?.response?.data as
+    | { error?: { message?: string }; message?: string }
+    | undefined;
+  if (data?.error?.message) return data.error.message;
+  if (typeof data?.message === 'string') return data.message;
+  if (err?.message) return err.message;
+  return '未知错误，请查看服务端日志';
+}
+
 interface ParsedFile {
   file: File;
   module: ModuleType;
@@ -712,8 +724,8 @@ const QuickUpload: React.FC<QuickUploadProps> = ({ onUploadComplete }) => {
       setGroups([]);
       onUploadComplete?.();
     } catch (e) {
-      const detail = e instanceof Error ? e.message : '导入失败';
-      toast.error(`导入失败：${detail}`);
+      const detail = extractApiError(e);
+      toast.error(`导入失败：${detail}`, { duration: 8000 });
     } finally {
       setImporting(false);
       setOverallProgress(0);

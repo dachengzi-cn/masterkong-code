@@ -32,6 +32,8 @@ const ExpensePage = lazy(() => import('@/pages/ExpensePage/ExpensePage'));
 const ExpiryExpensePage = lazy(() => import('@/pages/ExpiryExpensePage/ExpiryExpensePage'));
 const AtpExpensePage = lazy(() => import('@/pages/AtpExpensePage/AtpExpensePage'));
 const OverstockPage = lazy(() => import('@/pages/OverstockPage/OverstockPage'));
+const ExpenseEstimateOverview = lazy(() => import('@/pages/ExpenseEstimatePage/ExpenseEstimateOverview'));
+const ExpenseEstimateRegister = lazy(() => import('@/pages/ExpenseEstimatePage/ExpenseEstimateRegister'));
 const ServiceAnalysisPage = lazy(() => import('@/pages/ServiceAnalysisPage/ServiceAnalysisPage'));
 const CapabilityPage = lazy(() => import('@/pages/CapabilityPage/CapabilityPage'));
 const DbTablePage = lazy(() => import('@/pages/DbTablePage/DbTablePage'));
@@ -91,6 +93,10 @@ function SheetContent({ path }: { path: string }) {
         return wrap(<AtpExpensePage />);
       case '/expense/overstock':
         return wrap(<OverstockPage />);
+      case '/expense-estimate/overview':
+        return wrap(<ExpenseEstimateOverview />);
+      case '/expense-estimate/register':
+        return wrap(<ExpenseEstimateRegister />);
       case '/service-analysis':
         return wrap(<ServiceAnalysisPage />);
       case '/capability':

@@ -2,19 +2,15 @@ import { Module, Global, Injectable, Inject, OnApplicationBootstrap, Logger } fr
 import { DRIZZLE_DATABASE } from '@lark-apaas/fullstack-nestjs-core';
 import postgres from 'postgres';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { sql } from 'drizzle-orm';
 import * as schema from '@server/database/schema';
+import { ensureDatabaseSchema } from '@server/common/db-init';
 
 /**
- * 应用启动后自动为 anon_ 角色补发数据库权限，从根源上避免「运行时建表导致导出 500」。
+ * 数据库自动初始化兜底：main.ts 已在 Nest 应用创建前调用 ensureDatabaseSchema，
+ * 此处再在 onApplicationBootstrap 阶段幂等执行一次，覆盖「运行时新建表（如 report_record）」
+ * 的权限补齐，从根源上避免「运行时建表导致上传/导出 500」。
  *
- * 背景：datapaas 中间件会以 anon_ 角色执行业务 SQL，而部分表（如 report_record）
- * 由服务在运行时创建、不经过迁移脚本，新环境部署后 anon_ 角色缺少权限即报 42501。
- *
- * 本引导在 onApplicationBootstrap 阶段执行（晚于所有模块的 onModuleInit，
- * 即运行时创建的表已就绪），一次性补齐：
- *  1. 当前已存在的所有表/序列的权限
- *  2. 默认权限——未来任何新建的表/序列自动获得授权，无需任何迁移或手工步骤
+ * 幂等设计：表/类型/角色/权限均为「已存在则跳过」，不影响存量数据。
  */
 @Injectable()
 class DatabasePrivilegesBootstrap implements OnApplicationBootstrap {
@@ -24,25 +20,13 @@ class DatabasePrivilegesBootstrap implements OnApplicationBootstrap {
 
   async onApplicationBootstrap() {
     try {
-      await this.db.execute(sql`
-        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon_
-      `);
-      await this.db.execute(sql`
-        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon_
-      `);
-      await this.db.execute(sql`
-        ALTER DEFAULT PRIVILEGES IN SCHEMA public
-        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon_
-      `);
-      await this.db.execute(sql`
-        ALTER DEFAULT PRIVILEGES IN SCHEMA public
-        GRANT USAGE, SELECT ON SEQUENCES TO anon_
-      `);
-      this.logger.log('已自动授予 anon_ 角色全部业务表/序列权限（含未来新表的默认权限）');
-    } catch (err) {
-      this.logger.warn(
-        `自动授予 anon_ 角色权限失败（anon_ 角色可能不存在，或无授权权限）: ${(err as Error).message}`,
+      // 再次幂等执行完整初始化（含未来运行时新建表的默认权限）
+      await ensureDatabaseSchema(
+        process.env.SUDA_DATABASE_URL || 'postgresql://localhost:5432/postgres',
       );
+      this.logger.log('数据库结构/权限自动初始化完成（幂等）');
+    } catch (err) {
+      this.logger.warn(`数据库自动初始化失败: ${(err as Error).message}`);
     }
   }
 }

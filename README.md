@@ -141,11 +141,23 @@ AI_CONFIG_ENCRYPTION_KEY=change-me-to-a-strong-random-key
 
 > ⚠️ **权限要求**：数据库角色需具备应用表的 INSERT / UPDATE / DELETE 权限（`customer_profile`、`dataset`、`data_record`、`route_profile`、`route_mapping`、`expense_profile`）以及 `public` schema 下所有序列的 USAGE / SELECT 权限。
 
-### 3. 同步数据库 Schema
+### 3. 初始化数据库（自动或手动）
+
+**方式一（推荐，自动）**：应用启动时会在 `onApplicationBootstrap` 阶段**自动幂等创建**全部业务表、`anon_` 角色（datapaas 中间件以该角色执行请求 SQL）并授予权限。新环境只需正确配置 `SUDA_DATABASE_URL` 并确保连接用户有建表权限即可，无需手工执行任何 SQL。
+
+**方式二（手动）**：如需提前初始化，可执行完整初始化脚本：
 
 ```bash
-npm run gen:db-schema   # 将数据库结构同步至 server/database/schema.ts
+psql "$SUDA_DATABASE_URL" -f .tmp-init-db.sql
 ```
+
+**方式三（增量迁移）**：后续新增功能表的迁移脚本位于 `server/database/migrations/`，按编号顺序执行：
+
+```bash
+for f in server/database/migrations/*.sql; do psql "$SUDA_DATABASE_URL" -f "$f"; done
+```
+
+> `npm run gen:db-schema` 仅用于将数据库结构反向同步至 `server/database/schema.ts`（开发辅助），**不会**创建表。
 
 ### 4. 启动开发服务
 

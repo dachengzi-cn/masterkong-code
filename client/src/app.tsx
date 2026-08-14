@@ -19,6 +19,8 @@ const ServiceAnalysisPage = lazy(() => import('./pages/ServiceAnalysisPage/Servi
 const ExpiryExpensePage = lazy(() => import('./pages/ExpiryExpensePage/ExpiryExpensePage'));
 const AtpExpensePage = lazy(() => import('./pages/AtpExpensePage/AtpExpensePage'));
 const OverstockPage = lazy(() => import('./pages/OverstockPage/OverstockPage'));
+const ExpenseEstimateOverview = lazy(() => import('./pages/ExpenseEstimatePage/ExpenseEstimateOverview'));
+const ExpenseEstimateRegister = lazy(() => import('./pages/ExpenseEstimatePage/ExpenseEstimateRegister'));
 const CapabilityPage = lazy(() => import('./pages/CapabilityPage/CapabilityPage'));
 const DbTablePage = lazy(() => import('./pages/DbTablePage/DbTablePage'));
 
@@ -41,6 +43,9 @@ const RoutesComponent = () => {
         <Route path="expense/expiry" element={<Suspense fallback={<PageLoader />}><ExpiryExpensePage /></Suspense>} />
         <Route path="expense/atp" element={<Suspense fallback={<PageLoader />}><AtpExpensePage /></Suspense>} />
         <Route path="expense/overstock" element={<Suspense fallback={<PageLoader />}><OverstockPage /></Suspense>} />
+        <Route path="expense-estimate" element={<Navigate to="/expense-estimate/overview" replace />} />
+        <Route path="expense-estimate/overview" element={<Suspense fallback={<PageLoader />}><ExpenseEstimateOverview /></Suspense>} />
+        <Route path="expense-estimate/register" element={<Suspense fallback={<PageLoader />}><ExpenseEstimateRegister /></Suspense>} />
         <Route path="service-analysis" element={<Suspense fallback={<PageLoader />}><ServiceAnalysisPage /></Suspense>} />
         <Route path="capability" element={<Suspense fallback={<PageLoader />}><CapabilityPage /></Suspense>} />
         <Route path="db-table" element={<Suspense fallback={<PageLoader />}><DbTablePage /></Suspense>} />

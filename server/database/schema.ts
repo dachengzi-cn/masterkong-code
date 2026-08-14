@@ -290,6 +290,40 @@ export const expenseProfile = pgTable("expense_profile", {
   index("idx_expense_profile_sheet_type").on(table.sheetType),
 ]);
 
+export const expenseEstimateRecord = pgTable("expense_estimate_record", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // 业务月份 YYYY-MM
+  month: varchar("month", { length: 7 }).notNull(),
+  // 所别
+  region: varchar("region", { length: 255 }).notNull(),
+  // 部别
+  department: varchar("department", { length: 255 }).notNull(),
+  // 促销活动
+  activityName: varchar("activity_name", { length: 255 }).notNull(),
+  // 费用科目
+  expenseSubject: varchar("expense_subject", { length: 255 }).notNull(),
+  // 预估金额
+  estimatedAmount: numeric("estimated_amount", { precision: 14, scale: 2 }).notNull().default('0'),
+  // 登记金额（实际使用）
+  actualAmount: numeric("actual_amount", { precision: 14, scale: 2 }).notNull().default('0'),
+  // 备注
+  remark: text("remark"),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+  index("idx_expense_estimate_month").on(table.month),
+  index("idx_expense_estimate_region").on(table.region),
+  index("idx_expense_estimate_subject").on(table.expenseSubject),
+]);
+
 export const aiModelConfig = pgTable("ai_model_config", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	configKey: varchar("config_key", { length: 255 }).notNull().unique(),
@@ -528,6 +562,7 @@ export const capabilityUserScope = pgTable("capability_user_scope", {
 
 // table aliases
 export const expenseProfileTable = expenseProfile;
+export const expenseEstimateRecordTable = expenseEstimateRecord;
 export const routeProfileTable = routeProfile;
 export const aiModelConfigTable = aiModelConfig;
 export const aiSkillTable = aiSkill;

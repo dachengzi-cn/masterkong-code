@@ -62,6 +62,7 @@ export function ReportDownloadButton() {
   const [items, setItems] = React.useState<ReportRecord[]>([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [deletingAll, setDeletingAll] = React.useState(false);
   const [previewReport, setPreviewReport] = React.useState<ReportRecord | null>(null);
@@ -72,21 +73,26 @@ export function ReportDownloadButton() {
       const res = await getReports({ page: 1, pageSize: 20 });
       setItems(res.items);
       setTotal(res.total);
+      setLoadError(null);
     } catch (err) {
+      // 必须区分「加载失败」与「确实没有报表」：生成成功后打开按钮若遇后端瞬时不可用，
+      // 不能把失败误显示为「暂无生成的报表」，否则提示信息与实际功能不一致。
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error("加载报表列表失败", err);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // 报表列表变化（生成/删除）时刷新
+  // 报表列表变化（生成/删除）时刷新。
+  // 即使下拉框未打开也刷新角标数量，保证「导出成功」提示与右上角按钮计数一致。
   React.useEffect(() => {
     const handler = () => {
-      if (open) refresh();
+      refresh();
     };
     window.addEventListener(REPORT_LIST_CHANGED_EVENT, handler);
     return () => window.removeEventListener(REPORT_LIST_CHANGED_EVENT, handler);
-  }, [open, refresh]);
+  }, [refresh]);
 
   const handleOpenChange = React.useCallback(
     (next: boolean) => {
@@ -201,6 +207,23 @@ export function ReportDownloadButton() {
             <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
               加载中...
+            </div>
+          ) : loadError ? (
+            <div className="px-4 py-6 text-center">
+              <div className="text-xs font-medium text-destructive">报表列表加载失败</div>
+              <div className="mt-1 break-words text-[11px] leading-relaxed text-muted-foreground">
+                {loadError}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 h-7 text-xs"
+                onClick={refresh}
+                disabled={loading}
+              >
+                {loading && <Loader2 className="size-3 animate-spin" />}
+                {loading ? "加载中..." : "重新加载"}
+              </Button>
             </div>
           ) : items.length === 0 ? (
             <div className="py-8 text-center text-xs text-muted-foreground">

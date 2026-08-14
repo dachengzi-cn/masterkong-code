@@ -51,6 +51,8 @@ export async function getReports(params: GetReportsParams = {}) {
     const res = await axiosForBackend({
       url: '/api/reports',
       method: 'GET',
+      // 报表列表是高频变化资源，禁用 HTTP 缓存，避免浏览器返回过期的空列表
+      headers: { 'Cache-Control': 'no-cache' },
       params: {
         page: params.page ?? 1,
         pageSize: params.pageSize ?? 20,

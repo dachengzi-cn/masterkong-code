@@ -9,6 +9,7 @@ import { CustomerProfileModule } from './modules/customer-profile/customer-profi
 import { RouteMappingModule } from './modules/route-mapping/route-mapping.module';
 import { RouteProfileModule } from './modules/route-profile/route-profile.module';
 import { ExpenseProfileModule } from './modules/expense-profile/expense-profile.module';
+import { ExpenseEstimateModule } from './modules/expense-estimate/expense-estimate.module';
 import { LocalDatabaseModule } from './modules/local-database/local-database.module';
 import { RuntimeModule } from './modules/runtime/runtime.module';
 import { AiModule } from './modules/ai/ai.module';
@@ -34,6 +35,7 @@ import { DbTableModule } from './modules/db-table/db-table.module';
     RouteMappingModule,
     RouteProfileModule,
     ExpenseProfileModule,
+    ExpenseEstimateModule,
     AiModule,
     AiAnalysisModule,
     DocGenModule,

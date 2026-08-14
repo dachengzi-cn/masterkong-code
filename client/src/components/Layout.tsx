@@ -47,6 +47,7 @@ const NAV_ITEMS = [
   { path: '/', label: '主页', icon: '🏠' },
   { path: '/customers', label: '客户总览', icon: '👥' },
   { path: '/expense', label: '费用总览', icon: '💰' },
+  { path: '/expense-estimate', label: '费用预估', icon: '🧮' },
   { path: '/service-analysis', label: '服务点数分析', icon: '📍' },
   { path: '/capability', label: '能力评估', icon: '🎯' },
 ];
@@ -61,6 +62,11 @@ const EXPENSE_SUB_ITEMS = [
   { path: '/expense/expiry', label: '临期费用分析', icon: '⏰' },
   { path: '/expense/atp', label: 'ATP费用分析', icon: '⚡' },
   { path: '/expense/overstock', label: '差异门店分析', icon: '📦' },
+];
+
+const EXPENSE_ESTIMATE_SUB_ITEMS = [
+  { path: '/expense-estimate/overview', label: '达成预估', icon: '🏆' },
+  { path: '/expense-estimate/register', label: '费用登记', icon: '📝' },
 ];
 
 const FOOTER_NAV_ITEMS = [
@@ -79,6 +85,7 @@ const LayoutContent = () => {
   const [loggingOut, setLoggingOut] = useState(false);
   const [dashboardExpanded, setDashboardExpanded] = useState(() => pathname.startsWith('/dashboard'));
   const [expenseExpanded, setExpenseExpanded] = useState(() => pathname.startsWith('/expense'));
+  const [expenseEstimateExpanded, setExpenseEstimateExpanded] = useState(() => pathname.startsWith('/expense-estimate'));
   const [sheets, setSheets] = useState<SheetItem[]>([]);
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
 
@@ -159,8 +166,15 @@ const LayoutContent = () => {
 
   // Auto-expand when navigating to a expense sub-route
   useEffect(() => {
-    if (pathname.startsWith('/expense')) {
+    if (pathname === '/expense' || pathname.startsWith('/expense/')) {
       setExpenseExpanded(true);
+    }
+  }, [pathname]);
+
+  // Auto-expand when navigating to a expense-estimate sub-route
+  useEffect(() => {
+    if (pathname.startsWith('/expense-estimate')) {
+      setExpenseEstimateExpanded(true);
     }
   }, [pathname]);
 
@@ -170,6 +184,7 @@ const LayoutContent = () => {
       ...NAV_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
       ...DASHBOARD_SUB_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
       ...EXPENSE_SUB_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
+      ...EXPENSE_ESTIMATE_SUB_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
       ...FOOTER_NAV_ITEMS.map((item) => ({ path: item.path, label: item.label, icon: item.icon })),
     ];
     const matched = [...allSheetPaths]
@@ -188,6 +203,7 @@ const LayoutContent = () => {
       ...NAV_ITEMS.map((item) => item.path),
       ...DASHBOARD_SUB_ITEMS.map((item) => item.path),
       ...EXPENSE_SUB_ITEMS.map((item) => item.path),
+      ...EXPENSE_ESTIMATE_SUB_ITEMS.map((item) => item.path),
       ...FOOTER_NAV_ITEMS.map((item) => item.path),
     ];
     const isSheetPath = sheetPaths.some((path) =>
@@ -211,10 +227,12 @@ const LayoutContent = () => {
 
   const activeSubItem = DASHBOARD_SUB_ITEMS.find((item) => pathname.startsWith(item.path));
   const activeExpenseSubItem = EXPENSE_SUB_ITEMS.find((item) => pathname.startsWith(item.path));
+  const activeExpenseEstimateSubItem = EXPENSE_ESTIMATE_SUB_ITEMS.find((item) => pathname.startsWith(item.path));
   const activeSheet = sheets.find((sheet) => sheet.id === activeSheetId);
   const activeTitle = activeSheet?.label
     || activeSubItem?.label
     || activeExpenseSubItem?.label
+    || activeExpenseEstimateSubItem?.label
     || [...NAV_ITEMS, ...FOOTER_NAV_ITEMS].find((item) =>
       item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)
     )?.label
@@ -252,7 +270,7 @@ const LayoutContent = () => {
               <SidebarMenuButton size="lg" asChild tooltip="重点数据分析">
                 <Link to="/">
                   <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-                    <span className="truncate font-extrabold text-xl group-data-[collapsible=icon]:hidden">重点数据分析</span>
+                    <span className="truncate font-extrabold text-xl group-data-[collapsible=icon]:hidden">KPI Metrics</span>
                   </div>
                 </Link>
               </SidebarMenuButton>
@@ -328,7 +346,7 @@ const LayoutContent = () => {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
-                    isActive={sheets.some((sheet) => sheet.path.startsWith('/expense') && sheet.id === activeSheetId)}
+                    isActive={sheets.some((sheet) => (sheet.path.startsWith('/expense/') || sheet.path === '/expense') && sheet.id === activeSheetId)}
                     tooltip="费用总览"
                   >
                     <div
@@ -372,7 +390,55 @@ const LayoutContent = () => {
                     </SidebarMenuSub>
                   )}
                 </SidebarMenuItem>
-                {NAV_ITEMS.slice(2).filter((item) => item.path !== '/expense').map((item) => (
+                {/* 费用预估 — 可折叠二级目录 */}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={sheets.some((sheet) => sheet.path.startsWith('/expense-estimate') && sheet.id === activeSheetId)}
+                    tooltip="费用预估"
+                  >
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openSheet('/expense-estimate/overview', '费用预估', '🧮')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openSheet('/expense-estimate/overview', '费用预估', '🧮');
+                        }
+                      }}
+                    >
+                      <span className="flex size-4 items-center justify-center text-base leading-none">🧮</span>
+                      <span className="font-extrabold group-data-[collapsible=icon]:hidden">费用预估</span>
+                    </div>
+                  </SidebarMenuButton>
+                  <SidebarMenuAction
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpenseEstimateExpanded((prev) => !prev);
+                    }}
+                    className="group-data-[collapsible=icon]:hidden"
+                    aria-label={expenseEstimateExpanded ? '收起费用预估' : '展开费用预估'}
+                  >
+                    <span className="text-base leading-none transition-transform duration-150 ease-out">{expenseEstimateExpanded ? '▼' : '▶'}</span>
+                  </SidebarMenuAction>
+                  {expenseEstimateExpanded && (
+                    <SidebarMenuSub>
+                      {EXPENSE_ESTIMATE_SUB_ITEMS.map((sub) => (
+                        <SidebarMenuSubItem key={sub.path}>
+                          <SidebarMenuSubButton
+                            isActive={sheets.some((sheet) => sheet.path === sub.path && sheet.id === activeSheetId)}
+                            onClick={() => openSheet(sub.path, sub.label, sub.icon)}
+                          >
+                            <span className="flex size-4 items-center justify-center text-base leading-none">{sub.icon}</span>
+                            <span>{sub.label}</span>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  )}
+                </SidebarMenuItem>
+                {NAV_ITEMS.slice(2).filter((item) => item.path !== '/expense' && item.path !== '/expense-estimate').map((item) => (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
                       isActive={sheets.some((sheet) => sheet.path === item.path && sheet.id === activeSheetId)}
