@@ -511,6 +511,7 @@ export class DatasetService implements OnModuleInit {
   }
 
   private findSpecificationField(fields: FieldConfig[]): string | undefined {
+    const validFields = fields.filter((f: FieldConfig) => f?.name);
     const candidates = [
       '产品-规格',
       '规格',
@@ -523,28 +524,30 @@ export class DatasetService implements OnModuleInit {
       '产品-品牌规格',
     ];
     for (const cand of candidates) {
-      const found = fields.find((f: FieldConfig) => f.name.trim() === cand);
+      const found = validFields.find((f: FieldConfig) => f.name!.trim() === cand);
       if (found) return found.name;
     }
-    const fallback = fields.find((f: FieldConfig) =>
-      /规格|specification|品项/i.test(f.name)
+    const fallback = validFields.find((f: FieldConfig) =>
+      /规格|specification|品项/i.test(f.name!)
     );
     return fallback?.name;
   }
 
   private findBrandField(fields: FieldConfig[]): string | undefined {
+    const validFields = fields.filter((f: FieldConfig) => f?.name);
     const candidates = ['品牌', '产品-品牌', 'brand'];
     for (const cand of candidates) {
-      const found = fields.find((f: FieldConfig) => f.name.trim() === cand);
+      const found = validFields.find((f: FieldConfig) => f.name!.trim() === cand);
       if (found) return found.name;
     }
-    const fallback = fields.find((f: FieldConfig) =>
-      /品牌|brand/i.test(f.name)
+    const fallback = validFields.find((f: FieldConfig) =>
+      /品牌|brand/i.test(f.name!)
     );
     return fallback?.name;
   }
 
   private findCustomerCodeField(fields: FieldConfig[]): string | undefined {
+    const validFields = fields.filter((f: FieldConfig) => f?.name);
     const exactCandidates = [
       '客户编码', '客户代码', '客户编号', '客户-通路客户编码',
       '门店编码', '门店代码', '门店编号', '门店号',
@@ -552,30 +555,31 @@ export class DatasetService implements OnModuleInit {
       'store_code', 'storeCode', 'outlet_code', 'outletCode',
     ];
     for (const cand of exactCandidates) {
-      const found = fields.find((f: FieldConfig) => f.name.trim() === cand);
+      const found = validFields.find((f: FieldConfig) => f.name!.trim() === cand);
       if (found) return found.name;
     }
-    const lowerMatch = fields.find((f: FieldConfig) => {
-      const lower = f.name.toLowerCase();
+    const lowerMatch = validFields.find((f: FieldConfig) => {
+      const lower = f.name!.toLowerCase();
       return lower.includes('customer') && lower.includes('code');
     });
     if (lowerMatch) return lowerMatch.name;
-    const storeMatch = fields.find((f: FieldConfig) => {
-      const lower = f.name.toLowerCase();
+    const storeMatch = validFields.find((f: FieldConfig) => {
+      const lower = f.name!.toLowerCase();
       return lower.includes('store') && lower.includes('code');
     });
     if (storeMatch) return storeMatch.name;
-    const chineseMatch = fields.find(
+    const chineseMatch = validFields.find(
       (f: FieldConfig) =>
-        (f.name.includes('客户') && f.name.includes('编码')) ||
-        (f.name.includes('门店') && f.name.includes('编码')),
+        (f.name!.includes('客户') && f.name!.includes('编码')) ||
+        (f.name!.includes('门店') && f.name!.includes('编码')),
     );
     if (chineseMatch) return chineseMatch.name;
     return undefined;
   }
 
   private findDateField(fields: FieldConfig[]): string | undefined {
-    const dateField = fields.find((f: FieldConfig) => f.type === 'date');
+    const validFields = fields.filter((f: FieldConfig) => f?.name);
+    const dateField = validFields.find((f: FieldConfig) => f.type === 'date');
     if (dateField) return dateField.name;
     const dateCandidates = [
       '订单-订单日期',
@@ -591,32 +595,34 @@ export class DatasetService implements OnModuleInit {
       '年月',
     ];
     for (const cand of dateCandidates) {
-      const found = fields.find((f: FieldConfig) => f.name.trim() === cand);
+      const found = validFields.find((f: FieldConfig) => f.name!.trim() === cand);
       if (found) return found.name;
     }
-    const fallback = fields.find((f: FieldConfig) =>
-      /日期|date|时间|月份|年月|period|期间|^\d{4}年\d{1,2}月/i.test(f.name)
+    const fallback = validFields.find((f: FieldConfig) =>
+      /日期|date|时间|月份|年月|period|期间|^\d{4}年\d{1,2}月/i.test(f.name!)
     );
     return fallback?.name;
   }
 
   private findBoxCountField(fields: FieldConfig[]): string | undefined {
+    const validFields = fields.filter((f: FieldConfig) => f?.name);
     const candidates = ['箱数', '订单箱数', '数量', '订单数量', '件数'];
     for (const c of candidates) {
-      const found = fields.find((f: FieldConfig) => f.name === c);
+      const found = validFields.find((f: FieldConfig) => f.name === c);
       if (found) return found.name;
     }
-    return fields.find((f: FieldConfig) => f.type === 'number' && /箱|数量|件数|qty|box/i.test(f.name))?.name;
+    return validFields.find((f: FieldConfig) => f.type === 'number' && /箱|数量|件数|qty|box/i.test(f.name!))?.name;
   }
 
   private findAmountField(fields: FieldConfig[]): string | undefined {
+    const validFields = fields.filter((f: FieldConfig) => f?.name);
     const candidates = ['金额', '订单金额', '销售金额', '进货金额', '产品金额', '合计金额', '总额', '金额（元）'];
     for (const c of candidates) {
-      const found = fields.find((f: FieldConfig) => f.name.trim() === c);
+      const found = validFields.find((f: FieldConfig) => f.name!.trim() === c);
       if (found) return found.name;
     }
-    return fields.find((f: FieldConfig) =>
-      /金额|amount|销售额|销额|总价|total/i.test(f.name),
+    return validFields.find((f: FieldConfig) =>
+      /金额|amount|销售额|销额|总价|total/i.test(f.name!),
     )?.name;
   }
 

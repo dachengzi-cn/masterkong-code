@@ -1,7 +1,7 @@
 import { Injectable, Inject, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { expenseProfile } from '@server/database/schema';
-import { eq, count, sql, and, or, like } from 'drizzle-orm';
+import { eq, count, sql, and, or, like, inArray } from 'drizzle-orm';
 import { isMemoryFallbackEnabled, shouldFallbackToMemory } from '@server/common/utils/memory-fallback';
 import type {
   ExpenseRecord,
@@ -362,20 +362,26 @@ export class ExpenseProfileService implements OnModuleInit {
     }
 
     try {
-      // 覆盖上传时，先删除数据库中选定年月的旧数据
+      // 覆盖上传时，先删除数据库中选定年月的旧数据。
+      // 与插入过滤共用 extractMonthFromRecord（与客户端解析逻辑一致），
+      // 兼容 "6月 2026" / "2026年8月" / "2026-06-01" 等多种月份格式，避免旧数据残留产生重复。
       if (clearExisting && uploadMonths?.length) {
-        await this.db.execute(sql`
-          DELETE FROM expense_profile
-          WHERE EXISTS (
-            SELECT 1
-            FROM jsonb_each_text(${expenseProfile.extras}) AS kv
-            WHERE kv.value ~ '^[0-9]+月\\s+[0-9]{4}$'
-              AND to_char(
-                to_date(regexp_replace(kv.value, '([0-9]+)月\\s+([0-9]{4})', '\\2-\\1'), 'YYYY-MM'),
-                'YYYY-MM'
-              ) = ANY(${sql.param(uploadMonths)}::text[])
-          )
-        `);
+        const existingRows = await this.db
+          .select({ id: expenseProfile.id, extras: expenseProfile.extras })
+          .from(expenseProfile);
+        const idsToDelete = existingRows
+          .filter((row) => {
+            const month = extractMonthFromRecord({
+              extras: (row.extras as Record<string, unknown>) ?? {},
+            });
+            return month && uploadMonths.includes(month);
+          })
+          .map((row) => row.id);
+        if (idsToDelete.length > 0) {
+          await this.db
+            .delete(expenseProfile)
+            .where(inArray(expenseProfile.id, idsToDelete));
+        }
       }
 
       const BATCH_SIZE = 200;
